@@ -23,9 +23,14 @@ import java.util.Map;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
+import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.SparkCatalogTestBase;
+import org.apache.iceberg.transforms.Transforms;
 import org.apache.iceberg.types.Types;
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.catalyst.parser.ParseException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
@@ -310,5 +315,74 @@ public class TestCreateTableAsSelect extends SparkCatalogTestBase {
 
     Assert.assertEquals("Table should have expected snapshots",
         2, Iterables.size(rtasTable.snapshots()));
+  }
+
+  @Test
+  public void testCreateRTASWithPartitionSpecChanging() throws NoSuchTableException, ParseException {
+    sql("CREATE OR REPLACE TABLE %s USING iceberg PARTITIONED BY (part) AS " +
+            "SELECT id, data, CASE WHEN (id %% 2) = 0 THEN 'even' ELSE 'odd' END AS part " +
+            "FROM %s ORDER BY 3, 1", tableName, sourceName);
+
+    Table rtasTable = validationCatalog.loadTable(tableIdent);
+
+    assertEquals("Should have rows matching the source table",
+            sql("SELECT id, data, CASE WHEN (id %% 2) = 0 THEN 'even' ELSE 'odd' END AS part " +
+                    "FROM %s ORDER BY id", sourceName),
+            sql("SELECT * FROM %s ORDER BY id", tableName));
+
+    // Change the partitioning of the table
+    rtasTable.updateSpec().removeField("part").commit(); // Spec 1
+    rtasTable.updateSpec().addField(Expressions.truncate("id", 1)).commit(); // Spec 2
+
+    sql("CREATE OR REPLACE TABLE %s USING iceberg PARTITIONED BY (part, id) AS " +
+            "SELECT 2 * id as id, data, CASE WHEN ((2 * id) %% 2) = 0 THEN 'even' ELSE 'odd' END AS part " +
+            "FROM %s ORDER BY 3, 1", tableName, sourceName);
+
+    Schema expectedSchema = new Schema(
+            Types.NestedField.optional(1, "id", Types.LongType.get()),
+            Types.NestedField.optional(2, "data", Types.StringType.get()),
+            Types.NestedField.optional(3, "part", Types.StringType.get())
+    );
+
+    PartitionSpec expectedSpec = PartitionSpec.builderFor(expectedSchema)
+            .alwaysNull("part", "part_1000")
+            .alwaysNull("id", "id_trunc_1_1001")
+            .identity("part")
+            .identity("id")
+            .withSpecId(3) // The Spec is new
+            .build();
+
+    Assert.assertEquals("Should be partitioned by part and id",
+            expectedSpec, rtasTable.spec());
+
+    rtasTable.refresh();
+    rtasTable.updateSpec().removeField("id").commit(); // This should be our Spec 4
+    rtasTable.updateSpec().addField(Expressions.truncate("id", 1)).commit(); // Spec 5
+
+    PartitionSpec expectedPostSecondUpdatedSpec = PartitionSpec.builderFor(expectedSchema)
+            .alwaysNull("part", "part_1000")
+            .alwaysNull("id", "id_trunc_1_1001")
+            .identity("part")
+            .alwaysNull("id", "id_1003")
+            .truncate("id", 1, "id_trunc_1")
+            .withSpecId(5) // The Spec is new
+            .build();
+
+    Assert.assertEquals("Should be partitioned by part and truncate id",
+            expectedPostSecondUpdatedSpec, rtasTable.spec());
+
+    rtasTable.refresh();
+
+    // the replacement table has a different schema and partition spec than the original
+    Assert.assertEquals("Should have expected nullable schema",
+            expectedSchema.asStruct(), rtasTable.schema().asStruct());
+
+    assertEquals("Should have rows matching the source table",
+            sql("SELECT 2 * id, data, CASE WHEN ((2 * id) %% 2) = 0 THEN 'even' ELSE 'odd' END AS part " +
+                    "FROM %s ORDER BY id", sourceName),
+            sql("SELECT * FROM %s ORDER BY id", tableName));
+
+    Assert.assertEquals("Table should have expected snapshots",
+            2, Iterables.size(rtasTable.snapshots()));
   }
 }

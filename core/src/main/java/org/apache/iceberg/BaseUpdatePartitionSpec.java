@@ -242,7 +242,7 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
         // field IDs were not required for v1 and were assigned sequentially in each partition spec starting at 1,000.
         // to maintain consistent field ids across partition specs in v1 tables, any partition field that is removed
         // must be replaced with a null transform. null values are always allowed in partition data.
-        builder.add(field.sourceId(), field.fieldId(), field.name(), Transforms.alwaysNull());
+        builder.add(field.sourceId(), field.fieldId(), field.name() + "_" + field.fieldId(), Transforms.alwaysNull());
       }
     }
 

@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
+import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.ListMultimap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
@@ -350,6 +351,35 @@ public class PartitionSpec implements Serializable {
       }
       Preconditions.checkArgument(name != null && !name.isEmpty(),
           "Cannot use empty or null partition name: %s", name);
+
+      // Rename existing void transformation that conflict with this new name. This is an issue with V1 tables which
+      // use void transforms to preserve spec ordering. Void transform names do not matter and
+      // by default they take the name of the column which was removed. If we attempt to add partitioning on the
+      // column back we can change the name of the void transform to allow for this. Currently, BaseUpdatePartitionSpec
+      // should avoid this by adding the field ID to any new void transforms but for tables made before that change
+      // the modification below is still needed.
+      if (partitionNames.contains(name)) {
+        int existingFieldIndex = Iterables.indexOf(fields, field -> field.name().equals(name));
+        PartitionField existingField = fields.get(existingFieldIndex);
+        if (existingField.transform().equals(Transforms.alwaysNull())) {
+          String newName = name + "_" + existingField.fieldId();
+          while (partitionNames.contains(newName)) {
+            // On the off chance someone names a partition field very strangely
+            newName = newName + "_" + existingField.fieldId();
+          }
+
+          PartitionField renamedVoidField = new PartitionField(
+                  existingField.sourceId(),
+                  existingField.fieldId(),
+                  newName,
+                  existingField.transform());
+          fields.set(existingFieldIndex, renamedVoidField);
+
+          partitionNames.add(newName);
+          partitionNames.remove(name);
+        }
+      }
+
       Preconditions.checkArgument(!partitionNames.contains(name),
           "Cannot use partition name more than once: %s", name);
       partitionNames.add(name);

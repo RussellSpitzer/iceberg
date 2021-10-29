@@ -755,7 +755,11 @@ public class TableMetadata implements Serializable {
           // copy the new field with the existing field ID
           specBuilder.add(newField.sourceId(), field.fieldId(), newField.name(), newField.transform());
         } else {
-          specBuilder.add(field.sourceId(), field.fieldId(), field.name(), Transforms.alwaysNull());
+          // Cosmetic so that the field names match the logic in BaseUpdatePartitionSpec
+          String newFieldName = field.transform().equals(Transforms.alwaysNull()) ?
+                  field.name() :
+                  field.name() + "_" + field.fieldId();
+          specBuilder.add(field.sourceId(), field.fieldId(), newFieldName, Transforms.alwaysNull());
         }
       }
 
