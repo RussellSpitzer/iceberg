@@ -43,6 +43,7 @@ import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType$;
 import org.apache.spark.sql.types.TimestampNTZType$;
 import org.apache.spark.sql.types.TimestampType$;
+import org.apache.spark.sql.types.VariantType$;
 
 class TypeToSparkType extends TypeUtil.SchemaVisitor<DataType> {
   TypeToSparkType() {}
@@ -124,6 +125,8 @@ class TypeToSparkType extends TypeUtil.SchemaVisitor<DataType> {
       case DECIMAL:
         Types.DecimalType decimal = (Types.DecimalType) primitive;
         return DecimalType$.MODULE$.apply(decimal.precision(), decimal.scale());
+      case VARIANT:
+        return VariantType$.MODULE$;
       default:
         throw new UnsupportedOperationException(
             "Cannot convert unknown type to Spark: " + primitive);

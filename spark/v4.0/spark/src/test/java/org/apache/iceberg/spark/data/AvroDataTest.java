@@ -233,6 +233,16 @@ public abstract class AvroDataTest {
   }
 
   @Test
+  public void testVariant() throws IOException {
+    Schema schema =
+        new Schema(
+            required(0, "id", LongType.get()),
+            optional(1, "data", Types.VariantType.get()));
+
+    writeAndValidate(schema);
+  }
+
+  @Test
   public void testMixedTypes() throws IOException {
     Assumptions.assumeThat(supportsNestedTypes()).isTrue();
 

@@ -238,7 +238,7 @@ public class TypeWithSchemaVisitor<T> {
   }
 
   public T variant(Types.VariantType iVariant, GroupType variant, T result) {
-    throw new UnsupportedOperationException("Not implemented for variant");
+    return null;
   }
 
   public T primitive(

@@ -90,7 +90,7 @@ public class AvroWithPartnerVisitor<P, R> {
   }
 
   public R variant(P partner, R metadataResult, R valueResult) {
-    throw new UnsupportedOperationException("Visitor does not support variant");
+   return null;
   }
 
   public R primitive(P partner, Schema primitive) {
