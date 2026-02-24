@@ -602,6 +602,139 @@ public class TestSparkDataWrite {
     }
   }
 
+  @TestTemplate
+  public void testWriteDataFilesUnsortedTable() throws IOException {
+    File parent = temp.resolve(format.toString()).toFile();
+    File location = new File(parent, "test");
+
+    HadoopTables tables = new HadoopTables(CONF);
+    PartitionSpec spec = PartitionSpec.unpartitioned();
+    Table table = tables.create(SCHEMA, spec, location.toString());
+
+    List<SimpleRecord> expected = Lists.newArrayListWithCapacity(10);
+    for (int i = 0; i < 10; i++) {
+      expected.add(new SimpleRecord(i, "a"));
+    }
+
+    Dataset<Row> df = spark.createDataFrame(expected, SimpleRecord.class);
+    df.select("id", "data")
+        .write()
+        .format("iceberg")
+        .option(SparkWriteOptions.WRITE_FORMAT, format.toString())
+        .mode(SaveMode.Append)
+        .save(location.toString());
+
+    table.refresh();
+
+    try (CloseableIterable<FileScanTask> fileScanTasks = table.newScan().planFiles()) {
+      assertThat(fileScanTasks)
+          .extracting(task -> task.file().sortOrderId())
+          .as("Unsorted table DataFiles should have unsorted order id (0)")
+          .containsOnly(SortOrder.unsorted().orderId());
+    }
+  }
+
+  @TestTemplate
+  public void testWriteDataFilesAfterSortOrderChange() throws IOException {
+    File parent = temp.resolve(format.toString()).toFile();
+    File location = new File(parent, "test");
+
+    HadoopTables tables = new HadoopTables(CONF);
+    PartitionSpec spec = PartitionSpec.unpartitioned();
+    Table table = tables.create(SCHEMA, spec, location.toString());
+
+    List<SimpleRecord> batch1 = Lists.newArrayListWithCapacity(5);
+    for (int i = 0; i < 5; i++) {
+      batch1.add(new SimpleRecord(i, "a"));
+    }
+
+    Dataset<Row> df1 = spark.createDataFrame(batch1, SimpleRecord.class);
+    df1.select("id", "data")
+        .write()
+        .format("iceberg")
+        .option(SparkWriteOptions.WRITE_FORMAT, format.toString())
+        .mode(SaveMode.Append)
+        .save(location.toString());
+
+    table.refresh();
+    int unsortedId = SortOrder.unsorted().orderId();
+    try (CloseableIterable<FileScanTask> fileScanTasks = table.newScan().planFiles()) {
+      assertThat(fileScanTasks)
+          .extracting(task -> task.file().sortOrderId())
+          .as("First write should use unsorted order")
+          .containsOnly(unsortedId);
+    }
+
+    table.replaceSortOrder().asc("id").commit();
+    table.refresh();
+    int sortedId = table.sortOrder().orderId();
+    assertThat(sortedId).as("New sort order should differ from unsorted").isNotEqualTo(unsortedId);
+
+    List<SimpleRecord> batch2 = Lists.newArrayListWithCapacity(5);
+    for (int i = 5; i < 10; i++) {
+      batch2.add(new SimpleRecord(i, "a"));
+    }
+
+    Dataset<Row> df2 = spark.createDataFrame(batch2, SimpleRecord.class);
+    df2.select("id", "data")
+        .write()
+        .format("iceberg")
+        .option(SparkWriteOptions.WRITE_FORMAT, format.toString())
+        .mode(SaveMode.Append)
+        .save(location.toString());
+
+    table.refresh();
+    try (CloseableIterable<FileScanTask> fileScanTasks = table.newScan().planFiles()) {
+      assertThat(fileScanTasks)
+          .extracting(task -> task.file().sortOrderId())
+          .as("Files should have the sort order id matching when they were written")
+          .contains(unsortedId, sortedId);
+    }
+  }
+
+  @TestTemplate
+  public void testWriteDataFilesWithExplicitSortOrderId() throws IOException {
+    File parent = temp.resolve(format.toString()).toFile();
+    File location = new File(parent, "test");
+
+    HadoopTables tables = new HadoopTables(CONF);
+    PartitionSpec spec = PartitionSpec.unpartitioned();
+    SortOrder initialOrder = SortOrder.builderFor(SCHEMA).asc("id").build();
+    Table table =
+        tables.create(SCHEMA, spec, initialOrder, ImmutableMap.of(), location.toString());
+
+    int firstSortOrderId = table.sortOrder().orderId();
+
+    table.replaceSortOrder().asc("data").commit();
+    table.refresh();
+    int currentSortOrderId = table.sortOrder().orderId();
+    assertThat(currentSortOrderId).isNotEqualTo(firstSortOrderId);
+
+    List<SimpleRecord> records = Lists.newArrayListWithCapacity(5);
+    for (int i = 0; i < 5; i++) {
+      records.add(new SimpleRecord(i, "a"));
+    }
+
+    Dataset<Row> df = spark.createDataFrame(records, SimpleRecord.class);
+    df.select("id", "data")
+        .write()
+        .format("iceberg")
+        .option(SparkWriteOptions.WRITE_FORMAT, format.toString())
+        .option(SparkWriteOptions.USE_TABLE_DISTRIBUTION_AND_ORDERING, "false")
+        .option(SparkWriteOptions.OUTPUT_SORT_ORDER_ID, String.valueOf(firstSortOrderId))
+        .mode(SaveMode.Append)
+        .save(location.toString());
+
+    table.refresh();
+
+    try (CloseableIterable<FileScanTask> fileScanTasks = table.newScan().planFiles()) {
+      assertThat(fileScanTasks)
+          .extracting(task -> task.file().sortOrderId())
+          .as("Data files should carry the explicitly requested sort order id, not the current one")
+          .containsOnly(firstSortOrderId);
+    }
+  }
+
   public void partitionedCreateWithTargetFileSizeViaOption(IcebergOptionsType option) {
     File parent = temp.resolve(format.toString()).toFile();
     File location = new File(parent, "test");

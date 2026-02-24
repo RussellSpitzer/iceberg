@@ -165,20 +165,35 @@ public class SparkWriteConf {
     return outputSpecId;
   }
 
-  public SortOrder outputSortOrder() {
-    int outputSortOrderId =
+  /**
+   * Determines the sort order ID to stamp on written data files.
+   *
+   * <p>Checks for an explicit {@link SparkWriteOptions#OUTPUT_SORT_ORDER_ID} option first (e.g.,
+   * set by the rewrite files action). Otherwise, infers from the write requirements: if Spark is
+   * sorting the data (i.e., the write requirements include ordering), uses the table's current sort
+   * order ID; if not, uses the unsorted order ID.
+   */
+  public int outputSortOrderId(SparkWriteRequirements writeRequirements) {
+    String explicitSortOrderId =
         confParser
-            .intConf()
+            .stringConf()
             .option(SparkWriteOptions.OUTPUT_SORT_ORDER_ID)
-            .defaultValue(SortOrder.unsorted().orderId())
-            .parse();
+            .parseOptional();
 
-    Preconditions.checkArgument(
-        table.sortOrders().containsKey(outputSortOrderId),
-        "Output sort order id %s is not a valid sort order id for table",
-        outputSortOrderId);
+    if (explicitSortOrderId != null) {
+      int id = Integer.parseInt(explicitSortOrderId);
+      Preconditions.checkArgument(
+          table.sortOrders().containsKey(id),
+          "Output sort order id %s is not a valid sort order id for table",
+          id);
+      return id;
+    }
 
-    return table.sortOrders().get(outputSortOrderId);
+    if (!writeRequirements.hasOrdering()) {
+      return SortOrder.unsorted().orderId();
+    }
+
+    return table.sortOrder().orderId();
   }
 
   public FileFormat dataFileFormat() {
@@ -299,21 +314,6 @@ public class SparkWriteConf {
 
     return SparkWriteUtil.writeRequirements(
         table, distributionMode(), fanoutWriterEnabled(), dataAdvisoryPartitionSize());
-  }
-
-  public SparkWriteRequirements rewriteFilesWriteRequirements() {
-    Preconditions.checkNotNull(
-        rewrittenFileSetId(), "Can only use rewrite files write requirements during rewrite job!");
-
-    SortOrder outputSortOrder = outputSortOrder();
-    if (outputSortOrder.isSorted()) {
-      LOG.info(
-          "Found explicit sort order {} set in job configuration. Going to apply that to the sort-order-id of the rewritten files",
-          Spark3Util.describe(outputSortOrder));
-      return writeRequirements().withTableSortOrder(outputSortOrder);
-    }
-
-    return writeRequirements();
   }
 
   @VisibleForTesting

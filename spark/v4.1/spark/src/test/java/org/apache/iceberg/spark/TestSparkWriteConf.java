@@ -53,6 +53,7 @@ import java.util.List;
 import java.util.Map;
 import org.apache.iceberg.DistributionMode;
 import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.SortOrder;
 import org.apache.iceberg.ParameterizedTestExtension;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
@@ -602,7 +603,7 @@ public class TestSparkWriteConf extends TestBaseWithCatalog {
   }
 
   @TestTemplate
-  public void testSortOrderWriteConf() {
+  public void testOutputSortOrderIdExplicit() {
     Table table = validationCatalog.loadTable(tableIdent);
 
     table.replaceSortOrder().asc("id").commit();
@@ -611,15 +612,38 @@ public class TestSparkWriteConf extends TestBaseWithCatalog {
         new SparkWriteConf(
             spark, table, ImmutableMap.of(SparkWriteOptions.OUTPUT_SORT_ORDER_ID, "1"));
 
-    assertThat(writeConf.outputSortOrder()).isEqualTo(table.sortOrder());
+    assertThat(writeConf.outputSortOrderId(SparkWriteRequirements.EMPTY))
+        .isEqualTo(table.sortOrder().orderId());
+  }
+
+  @TestTemplate
+  public void testOutputSortOrderIdUnknown() {
+    Table table = validationCatalog.loadTable(tableIdent);
 
     SparkWriteConf writeConfForUnknownSortOrder =
         new SparkWriteConf(
             spark, table, ImmutableMap.of(SparkWriteOptions.OUTPUT_SORT_ORDER_ID, "999"));
 
     assertThatIllegalArgumentException()
-        .isThrownBy(writeConfForUnknownSortOrder::outputSortOrder)
+        .isThrownBy(
+            () -> writeConfForUnknownSortOrder.outputSortOrderId(SparkWriteRequirements.EMPTY))
         .withMessage("Output sort order id 999 is not a valid sort order id for table");
+  }
+
+  @TestTemplate
+  public void testOutputSortOrderIdFromWriteRequirements() {
+    Table table = validationCatalog.loadTable(tableIdent);
+
+    table.replaceSortOrder().asc("id").commit();
+
+    SparkWriteConf writeConf = new SparkWriteConf(spark, table, ImmutableMap.of());
+
+    SparkWriteRequirements reqsWithOrdering = writeConf.writeRequirements();
+    assertThat(writeConf.outputSortOrderId(reqsWithOrdering))
+        .isEqualTo(table.sortOrder().orderId());
+
+    assertThat(writeConf.outputSortOrderId(SparkWriteRequirements.EMPTY))
+        .isEqualTo(SortOrder.unsorted().orderId());
   }
 
   private void testWriteProperties(List<Map<String, String>> propertiesSuite) {

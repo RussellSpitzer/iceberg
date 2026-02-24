@@ -107,6 +107,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
   private final Map<String, String> extraSnapshotMetadata;
   private final boolean useFanoutWriter;
   private final SparkWriteRequirements writeRequirements;
+  private final int sortOrderId;
   private final Map<String, String> writeProperties;
 
   private boolean cleanupOnAbort = false;
@@ -135,6 +136,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
     this.extraSnapshotMetadata = writeConf.extraSnapshotMetadata();
     this.useFanoutWriter = writeConf.useFanoutWriter(writeRequirements);
     this.writeRequirements = writeRequirements;
+    this.sortOrderId = writeConf.outputSortOrderId(writeRequirements);
     this.outputSpecId = writeConf.outputSpecId();
     this.writeProperties = writeConf.writeProperties();
   }
@@ -208,7 +210,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
         dsSchema,
         useFanoutWriter,
         writeProperties,
-        writeRequirements.icebergOrdering());
+        sortOrderId);
   }
 
   private void commitOperation(SnapshotUpdate<?> operation, String description) {
@@ -701,7 +703,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
     private final boolean useFanoutWriter;
     private final String queryId;
     private final Map<String, String> writeProperties;
-    private final org.apache.iceberg.SortOrder sortOrder;
+    private final int sortOrderId;
 
     protected WriterFactory(
         Broadcast<Table> tableBroadcast,
@@ -713,7 +715,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
         StructType dsSchema,
         boolean useFanoutWriter,
         Map<String, String> writeProperties,
-        org.apache.iceberg.SortOrder sortOrder) {
+        int sortOrderId) {
       this.tableBroadcast = tableBroadcast;
       this.format = format;
       this.outputSpecId = outputSpecId;
@@ -723,7 +725,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
       this.useFanoutWriter = useFanoutWriter;
       this.queryId = queryId;
       this.writeProperties = writeProperties;
-      this.sortOrder = sortOrder;
+      this.sortOrderId = sortOrderId;
     }
 
     @Override
@@ -742,6 +744,7 @@ abstract class SparkWrite extends BaseSparkWrite implements Write, RequiresDistr
               .format(format)
               .operationId(operationId)
               .build();
+      org.apache.iceberg.SortOrder sortOrder = table.sortOrders().get(sortOrderId);
       SparkFileWriterFactory writerFactory =
           SparkFileWriterFactory.builderFor(table)
               .dataFileFormat(format)

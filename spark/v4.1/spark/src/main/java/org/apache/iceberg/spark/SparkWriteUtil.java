@@ -63,15 +63,6 @@ public class SparkWriteUtil {
   private static final SortOrder[] POSITION_DELETE_SPARK_ORDERING =
       orderBy(SPEC_ID, PARTITION, FILE_PATH, ROW_POSITION);
 
-  private static final SparkAndIcebergOrdering EXISTING_ROW_ORDERING =
-      SparkAndIcebergOrdering.unsorted().prependOrder(EXISTING_ROW_SPARK_ORDERING);
-  private static final SparkAndIcebergOrdering PARTITION_ORDERING =
-      SparkAndIcebergOrdering.unsorted().prependOrder(PARTITION_SPARK_ORDERING);
-  private static final SparkAndIcebergOrdering PARTITION_FILE_ORDERING =
-      SparkAndIcebergOrdering.unsorted().prependOrder(PARTITION_FILE_SPARK_ORDERING);
-  private static final SparkAndIcebergOrdering POSITION_DELETE_ORDERING =
-      SparkAndIcebergOrdering.unsorted().prependOrder(POSITION_DELETE_SPARK_ORDERING);
-
   private SparkWriteUtil() {}
 
   /** Builds requirements for batch and micro-batch writes such as append or overwrite. */
@@ -79,9 +70,8 @@ public class SparkWriteUtil {
       Table table, DistributionMode mode, boolean fanoutEnabled, long advisoryPartitionSize) {
 
     Distribution distribution = writeDistribution(table, mode);
-    SparkAndIcebergOrdering ordering = writeOrdering(table, fanoutEnabled);
-    return new SparkWriteRequirements(
-        distribution, ordering.sparkOrder(), ordering.icebergOrder(), advisoryPartitionSize);
+    SortOrder[] ordering = writeOrdering(table, fanoutEnabled);
+    return new SparkWriteRequirements(distribution, ordering, advisoryPartitionSize);
   }
 
   private static Distribution writeDistribution(Table table, DistributionMode mode) {
@@ -93,7 +83,7 @@ public class SparkWriteUtil {
         return Distributions.clustered(clustering(table));
 
       case RANGE:
-        return Distributions.ordered(ordering(table).sparkOrder());
+        return Distributions.ordered(tableOrdering(table));
 
       default:
         throw new IllegalArgumentException("Unsupported distribution mode: " + mode);
@@ -110,9 +100,8 @@ public class SparkWriteUtil {
 
     if (command == DELETE || command == UPDATE) {
       Distribution distribution = copyOnWriteDeleteUpdateDistribution(table, mode);
-      SparkAndIcebergOrdering ordering = writeOrdering(table, fanoutEnabled);
-      return new SparkWriteRequirements(
-          distribution, ordering.sparkOrder(), ordering.icebergOrder(), advisoryPartitionSize);
+      SortOrder[] ordering = writeOrdering(table, fanoutEnabled);
+      return new SparkWriteRequirements(distribution, ordering, advisoryPartitionSize);
     } else {
       return writeRequirements(table, mode, fanoutEnabled, advisoryPartitionSize);
     }
@@ -134,9 +123,9 @@ public class SparkWriteUtil {
 
       case RANGE:
         if (table.spec().isPartitioned() || table.sortOrder().isSorted()) {
-          return Distributions.ordered(ordering(table).sparkOrder());
+          return Distributions.ordered(tableOrdering(table));
         } else {
-          return Distributions.ordered(EXISTING_ROW_ORDERING.sparkOrder());
+          return Distributions.ordered(EXISTING_ROW_SPARK_ORDERING);
         }
 
       default:
@@ -154,15 +143,13 @@ public class SparkWriteUtil {
 
     if (command == UPDATE || command == MERGE) {
       Distribution distribution = positionDeltaUpdateMergeDistribution(table, mode);
-      SparkAndIcebergOrdering ordering = positionDeltaUpdateMergeOrdering(table, fanoutEnabled);
-      return new SparkWriteRequirements(
-          distribution, ordering.sparkOrder(), ordering.icebergOrder(), advisoryPartitionSize);
+      SortOrder[] ordering = positionDeltaUpdateMergeOrdering(table, fanoutEnabled);
+      return new SparkWriteRequirements(distribution, ordering, advisoryPartitionSize);
     } else {
       Distribution distribution = positionDeltaDeleteDistribution(table, mode);
-      SparkAndIcebergOrdering ordering =
-          fanoutEnabled ? SparkAndIcebergOrdering.unsorted() : POSITION_DELETE_ORDERING;
-      return new SparkWriteRequirements(
-          distribution, ordering.sparkOrder(), ordering.icebergOrder(), advisoryPartitionSize);
+      SortOrder[] ordering =
+          fanoutEnabled ? EMPTY_SPARK_ORDERING : POSITION_DELETE_SPARK_ORDERING;
+      return new SparkWriteRequirements(distribution, ordering, advisoryPartitionSize);
     }
   }
 
@@ -183,14 +170,10 @@ public class SparkWriteUtil {
       case RANGE:
         if (table.spec().isUnpartitioned()) {
           return Distributions.ordered(
-              SparkAndIcebergOrdering.forTable(table)
-                  .prependOrder(PARTITION_FILE_SPARK_ORDERING)
-                  .sparkOrder());
+              concat(PARTITION_FILE_SPARK_ORDERING, tableOrdering(table)));
         } else {
           return Distributions.ordered(
-              SparkAndIcebergOrdering.forTable(table)
-                  .prependOrder(PARTITION_SPARK_ORDERING)
-                  .sparkOrder());
+              concat(PARTITION_SPARK_ORDERING, tableOrdering(table)));
         }
 
       default:
@@ -198,12 +181,12 @@ public class SparkWriteUtil {
     }
   }
 
-  private static SparkAndIcebergOrdering positionDeltaUpdateMergeOrdering(
+  private static SortOrder[] positionDeltaUpdateMergeOrdering(
       Table table, boolean fanoutEnabled) {
     if (fanoutEnabled && table.sortOrder().isUnsorted()) {
-      return SparkAndIcebergOrdering.unsorted();
+      return EMPTY_SPARK_ORDERING;
     } else {
-      return SparkAndIcebergOrdering.forTable(table).prependOrder(POSITION_DELETE_SPARK_ORDERING);
+      return concat(POSITION_DELETE_SPARK_ORDERING, tableOrdering(table));
     }
   }
 
@@ -221,9 +204,9 @@ public class SparkWriteUtil {
 
       case RANGE:
         if (table.spec().isUnpartitioned()) {
-          return Distributions.ordered(PARTITION_FILE_ORDERING.sparkOrder());
+          return Distributions.ordered(PARTITION_FILE_SPARK_ORDERING);
         } else {
-          return Distributions.ordered(PARTITION_ORDERING.sparkOrder());
+          return Distributions.ordered(PARTITION_SPARK_ORDERING);
         }
 
       default:
@@ -235,11 +218,11 @@ public class SparkWriteUtil {
   // - there is a defined table sort order, so it is clear how the data should be ordered
   // - the table is partitioned and fanout writers are disabled,
   //   so records for one partition must be co-located within a task
-  private static SparkAndIcebergOrdering writeOrdering(Table table, boolean fanoutEnabled) {
+  private static SortOrder[] writeOrdering(Table table, boolean fanoutEnabled) {
     if (fanoutEnabled && table.sortOrder().isUnsorted()) {
-      return SparkAndIcebergOrdering.unsorted();
+      return EMPTY_SPARK_ORDERING;
     } else {
-      return ordering(table);
+      return tableOrdering(table);
     }
   }
 
@@ -247,8 +230,8 @@ public class SparkWriteUtil {
     return Spark3Util.toTransforms(table.spec());
   }
 
-  private static SparkAndIcebergOrdering ordering(Table table) {
-    return SparkAndIcebergOrdering.forTable(table);
+  private static SortOrder[] tableOrdering(Table table) {
+    return Spark3Util.toOrdering(SortOrderUtil.buildSortOrder(table));
   }
 
   private static Expression[] concat(Expression[] clustering, Expression... otherClustering) {
@@ -279,38 +262,4 @@ public class SparkWriteUtil {
     return Expressions.sort(expr, SortDirection.ASCENDING);
   }
 
-  private static class SparkAndIcebergOrdering {
-    private static final SparkAndIcebergOrdering UNSORTED =
-        new SparkAndIcebergOrdering(org.apache.iceberg.SortOrder.unsorted(), EMPTY_SPARK_ORDERING);
-
-    private final org.apache.iceberg.SortOrder icebergSortOrder;
-    private final SortOrder[] sparkSortOrder;
-
-    private SparkAndIcebergOrdering(
-        org.apache.iceberg.SortOrder icebergSortOrder, SortOrder[] sparkSortOrder) {
-      this.icebergSortOrder = icebergSortOrder;
-      this.sparkSortOrder = sparkSortOrder;
-    }
-
-    public static SparkAndIcebergOrdering forTable(Table table) {
-      return new SparkAndIcebergOrdering(
-          table.sortOrder(), Spark3Util.toOrdering(SortOrderUtil.buildSortOrder(table)));
-    }
-
-    public static SparkAndIcebergOrdering unsorted() {
-      return UNSORTED;
-    }
-
-    public SparkAndIcebergOrdering prependOrder(SortOrder[] ordering) {
-      return new SparkAndIcebergOrdering(icebergSortOrder, concat(ordering, sparkSortOrder));
-    }
-
-    public org.apache.iceberg.SortOrder icebergOrder() {
-      return icebergSortOrder;
-    }
-
-    public SortOrder[] sparkOrder() {
-      return sparkSortOrder;
-    }
-  }
 }

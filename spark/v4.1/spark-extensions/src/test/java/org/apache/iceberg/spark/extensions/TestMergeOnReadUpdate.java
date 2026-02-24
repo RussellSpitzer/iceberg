@@ -213,6 +213,30 @@ public class TestMergeOnReadUpdate extends TestUpdate {
     assertThat(dvs).allMatch(dv -> FileFormat.fromFileName(dv.location()) == FileFormat.PUFFIN);
   }
 
+  @TestTemplate
+  public void testMergeOnReadUpdateSetsSortOrderIdOnNewDataFiles() {
+    assumeThat(distributionMode).isEqualToIgnoringCase("range");
+
+    createAndInitTable(
+        "id INT, dep STRING",
+        "PARTITIONED BY (dep)",
+        "{ \"id\": 1, \"dep\": \"hr\" }\n" + "{ \"id\": 2, \"dep\": \"hr\" }");
+
+    Table table = validationCatalog.loadTable(tableIdent);
+    table.replaceSortOrder().asc("id").commit();
+
+    sql("UPDATE %s SET id = id + 10 WHERE id = 1", commitTarget());
+
+    table.refresh();
+
+    Snapshot updateSnapshot = SnapshotUtil.latestSnapshot(table, branch);
+    assertThat(updateSnapshot.addedDataFiles(table.io()))
+        .as("MoR update should produce new data files with the table sort order id")
+        .isNotEmpty()
+        .extracting(org.apache.iceberg.DataFile::sortOrderId)
+        .containsOnly(table.sortOrder().orderId());
+  }
+
   private void initTable(String partitionedBy, DeleteGranularity deleteGranularity) {
     createTableWithDeleteGranularity("id INT, dep STRING", partitionedBy, deleteGranularity);
 

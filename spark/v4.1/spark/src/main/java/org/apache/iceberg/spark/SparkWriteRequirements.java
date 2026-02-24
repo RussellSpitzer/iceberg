@@ -29,24 +29,16 @@ public class SparkWriteRequirements {
   public static final long NO_ADVISORY_PARTITION_SIZE = 0;
   public static final SparkWriteRequirements EMPTY =
       new SparkWriteRequirements(
-          Distributions.unspecified(),
-          new SortOrder[0],
-          org.apache.iceberg.SortOrder.unsorted(),
-          NO_ADVISORY_PARTITION_SIZE);
+          Distributions.unspecified(), new SortOrder[0], NO_ADVISORY_PARTITION_SIZE);
 
   private final Distribution distribution;
   private final SortOrder[] ordering;
-  private final org.apache.iceberg.SortOrder icebergOrdering;
   private final long advisoryPartitionSize;
 
   SparkWriteRequirements(
-      Distribution distribution,
-      SortOrder[] ordering,
-      org.apache.iceberg.SortOrder icebergOrdering,
-      long advisoryPartitionSize) {
+      Distribution distribution, SortOrder[] ordering, long advisoryPartitionSize) {
     this.distribution = distribution;
     this.ordering = ordering;
-    this.icebergOrdering = icebergOrdering;
     // Spark prohibits requesting a particular advisory partition size without distribution
     this.advisoryPartitionSize =
         distribution instanceof UnspecifiedDistribution
@@ -62,19 +54,11 @@ public class SparkWriteRequirements {
     return ordering;
   }
 
-  public org.apache.iceberg.SortOrder icebergOrdering() {
-    return icebergOrdering;
-  }
-
   public boolean hasOrdering() {
     return ordering.length != 0;
   }
 
   public long advisoryPartitionSize() {
     return advisoryPartitionSize;
-  }
-
-  public SparkWriteRequirements withTableSortOrder(org.apache.iceberg.SortOrder sortOrder) {
-    return new SparkWriteRequirements(distribution, ordering, sortOrder, advisoryPartitionSize);
   }
 }
