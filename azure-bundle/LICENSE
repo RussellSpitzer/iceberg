@@ -238,9 +238,6 @@ License: Apache License, Version 2.0 - https://www.apache.org/licenses/LICENSE-2
 
 --------------------------------------------------------------------------------
 
-
---------------------------------------------------------------------------------
-
 This product bundles Microsoft Authentication Library for Java.
 
 Project URL: https://github.com/AzureAD/microsoft-authentication-library-for-java
@@ -307,7 +304,7 @@ License: Apache License, Version 2.0 - https://www.apache.org/licenses/LICENSE-2
 This product bundles Reactive Streams.
 
 Project URL: http://www.reactive-streams.org/
-License: MIT
+License: MIT-0
 | MIT No Attribution
 | 
 | Copyright 2014 Reactive Streams
