@@ -25,13 +25,15 @@ Project conventions, architecture, and coding patterns synthesized from 58,000+ 
 
 ### Module Boundaries
 
-- **API** (`api/`): Public interfaces and types. Changes affect every engine and catalog. API additions must have default implementations; API breaks are almost never acceptable.
+- **API** (`api/`): Public interfaces and types. Changes affect every engine and catalog. API breaks are almost never acceptable.
 - **Core** (`core/`): Table spec implementation. Must be engine-agnostic. No Spark/Flink references. Properties should apply to all catalogs.
 - **Data** (`data/`): Generic data layer (DeleteFilter, BaseDeleteLoader, readers/writers). Behavior should be general, not engine-specific.
 - **Spark** (`spark/`): Spark integration only. Tests here validate integration, not core behavior.
 - **Flink** (`flink/`): Same principle as Spark — integration tests only.
 - **REST Catalog** (`open-api/`): OpenAPI spec for catalog interop. Precision in spec text is critical.
 - **AWS/GCP/Azure**: Cloud-specific catalog implementations. Don't leak cloud-specific assumptions into core.
+
+The `api/` module has the strongest stability guarantees — breaking changes are almost never allowed. Other modules with public APIs (`iceberg-data`, `iceberg-parquet`, and others marked in `build.gradle`) may have breaking changes in minor releases, but they must be justified and all changes are tracked via `revapi`. New interface methods in any of these modules must include default implementations.
 
 ### High-Sensitivity Areas
 
@@ -50,7 +52,6 @@ Project conventions, architecture, and coding patterns synthesized from 58,000+ 
 - **Builder pattern**: For complex creation. Never require passing `null` for optional parameters.
 - **Package-private by default**: Only make things public with demonstrated need.
 - **Postel's Law**: Accept case-insensitive input, produce canonical output.
-- **`boolean threw`**: `boolean threw = true; try { ...; threw = false; } finally { if (threw) cleanup(); }`.
 - **`Tasks.foreach`**: For bulk operations with parallelism, retry, and error handling.
 - **Immutable metadata**: `TableMetadata`, `Schema`, `PartitionSpec`, `SortOrder` produce new instances via builders.
 - **Metadata updates for REST**: All mutations must produce serializable `MetadataUpdate` objects.
@@ -129,10 +130,11 @@ Project conventions, architecture, and coding patterns synthesized from 58,000+ 
 ### Testing
 
 - Minimal test setup: `PartitionSpec.unpartitioned()` when partitioning isn't needed.
+- Test classes and methods should be package private unless required by inheritance.
 - Compute expected values, don't hardcode. Tests belong in the module that owns the code.
 - Write the most direct test for the bug. Parameterized tests for type variations.
 - JUnit 5 + AssertJ: `@Test` (no `test` prefix), `assertThat`, `assertThatThrownBy`.
-- `waitUntilAfter` for time-dependent tests. `boolean threw` for cleanup. Separate tests over combined.
+- `waitUntilAfter` for time-dependent tests. Separate tests over combined.
 
 ### REST / OpenAPI Spec
 
