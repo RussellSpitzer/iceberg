@@ -154,6 +154,7 @@ The `api/` module has the strongest stability guarantees — breaking changes ar
 
 ## PR & Commit Conventions
 
+- PR titles follow `Module: Description` format (e.g., `Core: Fix ...`, `Spark: Add ...`, `Docs: Update ...`).
 - One concern per PR. Unrelated whitespace, import, or formatting changes go in separate PRs.
 - Keep first version of a PR minimal — defer recovery, optimization, and edge cases to follow-ups.
 - Commit messages describe the *what* and *why*, not implementation details.
