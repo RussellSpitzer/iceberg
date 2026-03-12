@@ -83,7 +83,18 @@ public class IcebergSplit extends InputSplit
 
   @Override
   public void write(DataOutput out) throws IOException {
-    byte[] tableData = SerializationUtil.serializeToBytes(table);
+    byte[] tableData;
+    if (conf != null
+        && conf.getBoolean(
+            InputFormatConfig.CONFIG_SERIALIZATION_DISABLED,
+            InputFormatConfig.CONFIG_SERIALIZATION_DISABLED_DEFAULT)) {
+      // Skip serializing the Hadoop config inside the FileIO to reduce split size.
+      // The config will be re-injected from the TaskAttemptContext on the deserializer side.
+      tableData = SerializationUtil.serializeToBytes(table, c -> () -> null);
+    } else {
+      tableData = SerializationUtil.serializeToBytes(table);
+    }
+
     out.writeInt(tableData.length);
     out.write(tableData);
 

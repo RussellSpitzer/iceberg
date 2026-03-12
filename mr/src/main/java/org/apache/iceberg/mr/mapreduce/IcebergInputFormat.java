@@ -19,7 +19,6 @@
 package org.apache.iceberg.mr.mapreduce;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.util.Iterator;
 import java.util.List;
@@ -33,7 +32,6 @@ import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.iceberg.CombinedScanTask;
 import org.apache.iceberg.DataFile;
-import org.apache.iceberg.DataTableScan;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
@@ -149,53 +147,11 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
       throw new UncheckedIOException(String.format("Failed to close table scan: %s", scan), e);
     }
 
-    // if enabled, do not serialize FileIO hadoop config to decrease split size
-    // However, do not skip serialization for metatable queries, because some metadata tasks cache
-    // the IO object and we
-    // wouldn't be able to inject the config into these tasks on the deserializer-side, unlike for
-    // standard queries
-    if (scan instanceof DataTableScan) {
-      checkAndSkipIoConfigSerialization(conf, table);
-    }
-
     return splits;
   }
 
-  /**
-   * If enabled, it ensures that the FileIO's hadoop configuration will not be serialized. This
-   * might be desirable for decreasing the overall size of serialized table objects.
-   *
-   * <p>Note: Skipping FileIO config serialization in this fashion might in turn necessitate calling
-   * {@link #checkAndSetIoConfig(Configuration, Table)} on the deserializer-side to enable
-   * subsequent use of the FileIO.
-   *
-   * @param config Configuration to set for FileIO in a transient manner, if enabled
-   * @param table The Iceberg table object
-   */
-  private void checkAndSkipIoConfigSerialization(Configuration config, Table table) {
-    if (table != null
-        && config.getBoolean(
-            InputFormatConfig.CONFIG_SERIALIZATION_DISABLED,
-            InputFormatConfig.CONFIG_SERIALIZATION_DISABLED_DEFAULT)
-        && table.io() instanceof HadoopConfigurable) {
-      ((HadoopConfigurable) table.io())
-          .serializeConfWith(conf -> new NonSerializingConfig(config)::get);
-    }
-  }
-
-  /**
-   * If enabled, it populates the FileIO's hadoop configuration with the input config object. This
-   * might be necessary when the table object was serialized without the FileIO config.
-   *
-   * @param config Configuration to set for FileIO, if enabled
-   * @param table The Iceberg table object
-   */
-  private static void checkAndSetIoConfig(Configuration config, Table table) {
-    if (table != null
-        && config.getBoolean(
-            InputFormatConfig.CONFIG_SERIALIZATION_DISABLED,
-            InputFormatConfig.CONFIG_SERIALIZATION_DISABLED_DEFAULT)
-        && table.io() instanceof HadoopConfigurable) {
+  private static void setIoConfig(Configuration config, Table table) {
+    if (table != null && table.io() instanceof HadoopConfigurable) {
       ((HadoopConfigurable) table.io()).setConf(config);
     }
   }
@@ -203,24 +159,6 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
   @Override
   public RecordReader<Void, T> createRecordReader(InputSplit split, TaskAttemptContext context) {
     return new IcebergRecordReader<>();
-  }
-
-  private static class NonSerializingConfig implements Serializable {
-
-    private final transient Configuration conf;
-
-    NonSerializingConfig(Configuration conf) {
-      this.conf = conf;
-    }
-
-    public Configuration get() {
-      if (conf == null) {
-        throw new IllegalStateException(
-            "Configuration was not serialized on purpose but was not set manually either");
-      }
-
-      return conf;
-    }
   }
 
   private static final class IcebergRecordReader<T> extends RecordReader<Void, T> {
@@ -245,7 +183,7 @@ public class IcebergInputFormat<T> extends InputFormat<Void, T> {
       CombinedScanTask task = ((IcebergSplit) split).task();
       this.context = newContext;
       Table table = ((IcebergSplit) split).table();
-      checkAndSetIoConfig(conf, table);
+      setIoConfig(conf, table);
       this.io = table.io();
       this.encryptionManager = table.encryption();
       this.tasks = task.files().iterator();
