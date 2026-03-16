@@ -88,6 +88,7 @@ The `api/` module has the strongest stability guarantees — breaking changes ar
 - Magic numbers should be named constants. No personal pronouns in comments.
 - `} else {` on same line. Minimize variable scope. `try-with-resources` for all `AutoCloseable`.
 - Prefer method references over lambdas. Wrap lines at the highest semantic level.
+- Always use imports — never use fully-qualified class names inline.
 
 ### Code Placement
 
