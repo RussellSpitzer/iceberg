@@ -83,17 +83,30 @@ tasks.register('checkRuntimeDeps') {
     def expected = depsFile.readLines().findAll { it.trim() }.toSorted()
 
     if (actual != expected) {
-      def added = actual - expected
-      def removed = expected - actual
+      def groupArtifact = { coord -> coord.substring(0, coord.lastIndexOf(':')) }
+      def actualByModule = actual.collectEntries { [(groupArtifact(it)): it] }
+      def expectedByModule = expected.collectEntries { [(groupArtifact(it)): it] }
+
+      def added = actualByModule.keySet() - expectedByModule.keySet()
+      def removed = expectedByModule.keySet() - actualByModule.keySet()
+      def shared = actualByModule.keySet().intersect(expectedByModule.keySet())
+      def versionChanged = shared.findAll { actualByModule[it] != expectedByModule[it] }
+
       def msg = new StringBuilder()
       msg.append("Runtime dependency baseline mismatch for ${project.name}!\n")
+      if (versionChanged) {
+        msg.append("\n  Version changed (${versionChanged.size()}):\n")
+        versionChanged.toSorted().each { module ->
+          msg.append("    ~ ${expectedByModule[module]}  ->  ${actualByModule[module]}\n")
+        }
+      }
       if (added) {
         msg.append("\n  Added (${added.size()}):\n")
-        added.each { msg.append("    + ${it}\n") }
+        added.toSorted().each { module -> msg.append("    + ${actualByModule[module]}\n") }
       }
       if (removed) {
         msg.append("\n  Removed (${removed.size()}):\n")
-        removed.each { msg.append("    - ${it}\n") }
+        removed.toSorted().each { module -> msg.append("    - ${expectedByModule[module]}\n") }
       }
       msg.append("\nTo update the baseline run:\n")
       msg.append("  ./gradlew ${project.path}:generateRuntimeDeps\n")
