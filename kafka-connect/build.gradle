@@ -255,7 +255,7 @@ project(':iceberg-kafka-connect:iceberg-kafka-connect-runtime') {
 
   assemble.dependsOn distZip, hiveDistZip
 
-  apply from: "${rootDir}/gradle/runtime-deps.gradle"
+  apply from: "${rootDir}/runtime-deps.gradle"
 }
 
 project(':iceberg-kafka-connect:iceberg-kafka-connect-transforms') {

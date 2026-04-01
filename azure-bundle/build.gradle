@@ -53,5 +53,5 @@ project(":iceberg-azure-bundle") {
     enabled = false
   }
 
-  apply from: "${rootDir}/gradle/runtime-deps.gradle"
+  apply from: "${rootDir}/runtime-deps.gradle"
 }

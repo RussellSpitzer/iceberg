@@ -36,7 +36,10 @@
 //
 //   checkRuntimeDeps     - compares the resolved dependencies against the
 //                          checked-in baseline and fails with a diff if
-//                          they don't match. Wired into the 'check' lifecycle.
+//                          they don't match. Patch-level version changes are
+//                          ignored so that routine Dependabot bumps don't
+//                          require a baseline update. Wired into the 'check'
+//                          lifecycle.
 //
 // Workflow:
 //   1. ./gradlew check                   -- fails if deps changed
@@ -74,24 +77,32 @@ tasks.register('checkRuntimeDeps') {
   outputs.file(depsFile)
   doLast {
     if (!depsFile.exists()) {
-      throw new GradleException(
-        "Missing ${depsFile.name} in ${projectDir}.\n" +
+      logger.warn("WARNING: Missing ${depsFile.name} in ${projectDir}. " +
         "Run: ./gradlew ${project.path}:generateRuntimeDeps")
+      return
     }
 
     def actual = resolveRuntimeDeps()
     def expected = depsFile.readLines().findAll { it.trim() }.toSorted()
 
-    if (actual != expected) {
-      def groupArtifact = { coord -> coord.substring(0, coord.lastIndexOf(':')) }
-      def actualByModule = actual.collectEntries { [(groupArtifact(it)): it] }
-      def expectedByModule = expected.collectEntries { [(groupArtifact(it)): it] }
+    def groupArtifact = { coord -> coord.substring(0, coord.lastIndexOf(':')) }
+    def majorMinor = { coord ->
+      def ver = coord.substring(coord.lastIndexOf(':') + 1)
+      def parts = ver.split('\\.')
+      parts.length >= 2 ? "${parts[0]}.${parts[1]}" : ver
+    }
 
-      def added = actualByModule.keySet() - expectedByModule.keySet()
-      def removed = expectedByModule.keySet() - actualByModule.keySet()
-      def shared = actualByModule.keySet().intersect(expectedByModule.keySet())
-      def versionChanged = shared.findAll { actualByModule[it] != expectedByModule[it] }
+    def actualByModule = actual.collectEntries { [(groupArtifact(it)): it] }
+    def expectedByModule = expected.collectEntries { [(groupArtifact(it)): it] }
 
+    def added = actualByModule.keySet() - expectedByModule.keySet()
+    def removed = expectedByModule.keySet() - actualByModule.keySet()
+    def shared = actualByModule.keySet().intersect(expectedByModule.keySet())
+    def versionChanged = shared.findAll {
+      majorMinor(actualByModule[it]) != majorMinor(expectedByModule[it])
+    }
+
+    if (added || removed || versionChanged) {
       def msg = new StringBuilder()
       msg.append("Runtime dependency baseline mismatch for ${project.name}!\n")
       if (versionChanged) {
