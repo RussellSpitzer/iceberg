@@ -50,6 +50,7 @@ def resolveRuntimeDeps = {
   configurations.runtimeClasspath.resolvedConfiguration
     .resolvedArtifacts
     .collect { "${it.moduleVersion.id.group}:${it.moduleVersion.id.name}:${it.moduleVersion.id.version}" }
+    .findAll { !it.startsWith('org.apache.iceberg:') }
     .toSorted()
     .toUnique()
 }
