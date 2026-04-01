@@ -120,6 +120,15 @@ allprojects {
   }
 }
 
+tasks.register('checkAllRuntimeDeps') {
+  description = 'Validates runtime dependency baselines for all subprojects that have them'
+  group = 'verification'
+
+  dependsOn subprojects.collect { subproject ->
+    subproject.tasks.matching { it.name == 'checkRuntimeDeps' }
+  }
+}
+
 subprojects {
   if (it.name == 'iceberg-bom') {
     // the BOM does not build anything, the code below expects "source code"
