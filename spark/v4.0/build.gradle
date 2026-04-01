@@ -335,5 +335,7 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
   jar {
     enabled = false
   }
+
+  apply from: "${rootDir}/gradle/runtime-deps.gradle"
 }
 
