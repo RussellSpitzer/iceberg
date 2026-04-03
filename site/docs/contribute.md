@@ -113,6 +113,18 @@ Iceberg is built using Gradle with Java 17 or 21.
 * To fix code style: `./gradlew spotlessApply`
 * To build particular Spark/Flink Versions: `./gradlew build -DsparkVersions=3.5,4.0 -DflinkVersions=1.20,2.0`
 
+### Pre-commit Hook
+
+This project includes a pre-commit hook that runs `spotlessApply` and re-stages formatted files
+before each commit. To enable it, symlink the hook into your local hooks directory:
+
+```bash
+ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
+```
+
+If you already have a `.git/hooks/pre-commit`, the command will fail rather than overwrite it.
+You can chain the hooks together by calling the existing hook from within the new one.
+
 Iceberg table support is organized in library modules:
 
 * `iceberg-common` contains utility classes used in other modules
