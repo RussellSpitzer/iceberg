@@ -40,6 +40,24 @@ teardown() {
   [ ! -f "${TEST_TMPDIR}/apache-iceberg-1.10.0.tar.gz" ]
 }
 
+@test "drift guard: release workflows that set up Java pin JDK 17 (deploy.gradle / verify_jdk_17)" {
+  local repo_root wf
+  repo_root="$(cd "${LIBS_DIR}/../.." && pwd)"
+  local found_setup=0
+  for wf in "${repo_root}"/.github/workflows/release-*.yml; do
+    [ -f "${wf}" ] || continue
+    if grep -q 'setup-java' "${wf}"; then
+      found_setup=1
+      grep -q 'name: Set up JDK 17' "${wf}" \
+        || { echo "step name drifted in ${wf}"; return 1; }
+      grep -q 'java-version: 17' "${wf}" \
+        || { echo "java-version drifted in ${wf}"; return 1; }
+    fi
+  done
+  [ "${found_setup}" -eq 1 ] \
+    || { echo "expected at least one release workflow to call setup-java"; return 1; }
+}
+
 # ---- stage_convenience_binaries ----
 
 @test "stage_convenience_binaries: dry-run prints all expected gradle invocations" {

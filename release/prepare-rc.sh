@@ -336,24 +336,20 @@ if [[ ${DRY_RUN:-1} -ne 1 ]]; then
   : "${SVN_USERNAME:?SVN_USERNAME must be set for real (non-dry-run) execution}"
   : "${SVN_PASSWORD:?SVN_PASSWORD must be set for real (non-dry-run) execution}"
 
-  tmpdir="${PROJECT_DIR}/tmp-svn-stage"
-  if [[ -d "${tmpdir}" ]]; then
-    rm -rf "${tmpdir}"
-  fi
+  tmpdir=""
+  make_release_tempdir tmpdir
 
   svn_run_with_retries 5 60 "${tmpdir}" \
     co --depth=empty "${svn_dir}" "${tmpdir}"
 
   mkdir -p "${tmpdir}/${rc_svn_dir}"
-  cp "${PROJECT_DIR}/${tarball_name}" \
-     "${PROJECT_DIR}/${tarball_name}.asc" \
-     "${PROJECT_DIR}/${tarball_name}.sha512" \
+  cp "${source_tarball_dir}/${tarball_name}" \
+     "${source_tarball_dir}/${tarball_name}.asc" \
+     "${source_tarball_dir}/${tarball_name}.sha512" \
      "${tmpdir}/${rc_svn_dir}/"
 
   (cd "${tmpdir}" && exec_process svn add "${rc_svn_dir}")
   (cd "${tmpdir}" && svn_run ci -m "Apache Iceberg ${version} RC${rc_number}")
-
-  rm -rf "${tmpdir}"
 else
   print_command "Dry-run, WOULD stage to ${svn_dir}/${rc_svn_dir}"
 fi

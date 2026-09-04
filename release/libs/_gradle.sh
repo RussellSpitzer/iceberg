@@ -60,19 +60,10 @@ function verify_jdk_17 {
 
 # Builds the source release tarball.
 #
-# Mirrors dev/source-release.sh exactly so the produced tarball is
-# byte-compatible with a manual release. Specifically:
-#   1. Writes <projectdir>/version.txt containing the release version.
-#   2. Runs `./gradlew generateGitProperties` to produce
-#      build/iceberg-build.properties for the current git state.
-#   3. Copies that file to <projectdir>/iceberg-build.properties so it can
-#      be picked up by `git archive --add-file`.
-#   4. Runs `git archive --worktree-attributes --prefix <tag>/
-#                       --add-file version.txt --add-file iceberg-build.properties`
-#      against the release commit.
-#   5. Removes the temporary version.txt and iceberg-build.properties so
-#      the working tree is left clean.
-#   6. GPG-signs the tarball (armored, detached) and writes the .sha512.
+# Tarball contents match dev/source-release.sh (version.txt and
+# iceberg-build.properties added via `git archive --add-file`). Sidecar
+# files and the tarball itself are written outside the repo tree so that
+# a later `-Prelease` Gradle run does not feed them to RAT / spotless.
 #
 # Args:
 #   $1: project root (absolute path)
@@ -82,7 +73,7 @@ function verify_jdk_17 {
 #   $5: optional GPG key id to use; defaults to gpg's default key
 #
 # After success, the tarball, .asc, and .sha512 are present at
-# ${projectdir}/${tag}.tar.gz and friends.
+# ${source_tarball_dir}/${tag}.tar.gz. Callers should read that global.
 function build_source_tarball {
   local projectdir="$1"
   local tag="$2"
@@ -93,28 +84,36 @@ function build_source_tarball {
   local tarball="${tag}.tar.gz"
 
   if [[ ${DRY_RUN:-1} -eq 1 ]]; then
-    print_command "Dry-run, WOULD build source tarball ${projectdir}/${tarball} from ${release_hash}"
+    print_command "Dry-run, WOULD build source tarball ${tarball} from ${release_hash}"
     return 0
   fi
 
+  # Sidecars and the tarball itself stay out of the repo tree. Gradle's
+  # release profile runs license / spotless checks against $(pwd); files
+  # written next to build.gradle get flagged for missing headers.
+  # Populated for callers (prepare-rc.sh copies these into the SVN tree).
+  # shellcheck disable=SC2034
+  source_tarball_dir=""
+  _tarball_sidecar_dir=""
+  make_release_tempdir source_tarball_dir
+  make_release_tempdir _tarball_sidecar_dir
+
   print_info "Generating version.txt and iceberg-build.properties..."
-  echo "${version}" > "${projectdir}/version.txt"
+  echo "${version}" > "${_tarball_sidecar_dir}/version.txt"
   (cd "${projectdir}" && ./gradlew generateGitProperties)
-  cp "${projectdir}/build/iceberg-build.properties" "${projectdir}/iceberg-build.properties"
+  cp "${projectdir}/build/iceberg-build.properties" "${_tarball_sidecar_dir}/iceberg-build.properties"
 
   print_info "Creating tarball ${tarball} using commit ${release_hash}"
   (cd "${projectdir}" && \
     git archive "${release_hash}" \
       --worktree-attributes \
       --prefix "${tag}/" \
-      --add-file "${projectdir}/version.txt" \
-      --add-file "${projectdir}/iceberg-build.properties" \
-      -o "${projectdir}/${tarball}")
-
-  rm -f "${projectdir}/version.txt" "${projectdir}/iceberg-build.properties"
+      --add-file "${_tarball_sidecar_dir}/version.txt" \
+      --add-file "${_tarball_sidecar_dir}/iceberg-build.properties" \
+      -o "${source_tarball_dir}/${tarball}")
 
   print_info "Signing the tarball..."
-  local gpg_args=(--armor --output "${projectdir}/${tarball}.asc" --detach-sig "${projectdir}/${tarball}")
+  local gpg_args=(--armor --output "${source_tarball_dir}/${tarball}.asc" --detach-sig "${source_tarball_dir}/${tarball}")
   if [[ -n "${keyid}" ]]; then
     gpg -u "${keyid}" "${gpg_args[@]}"
   else
@@ -122,7 +121,8 @@ function build_source_tarball {
   fi
 
   print_info "Generating SHA-512 checksum..."
-  (cd "${projectdir}" && shasum -a 512 "${tarball}") > "${projectdir}/${tarball}.sha512"
+  (cd "${source_tarball_dir}" && shasum -a 512 "${tarball}") > "${source_tarball_dir}/${tarball}.sha512"
+  print_info "Source tarball written to ${source_tarball_dir}/${tarball}"
 }
 
 # Stages convenience binaries to Nexus. Two Gradle passes:

@@ -23,6 +23,7 @@ LIBS_DIR="${BATS_TEST_DIRNAME}/../libs"
 # Reset the include guards so each test re-sources the libraries cleanly.
 unset _CONSTANTS_LOADED _LOG_LOADED _EXEC_LOADED _VERSION_LOADED
 unset _GITHUB_LOADED _NEXUS_LOADED _GRADLE_LOADED
+unset _RELEASE_TEMPDIR_TRAP_INSTALLED RELEASE_TEMPDIRS
 
 # Reset globals that library functions populate so leakage between tests
 # can't mask real bugs.

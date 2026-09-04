@@ -93,6 +93,50 @@ function exec_process_with_retries {
   done
 }
 
+# Transient directories used by the release scripts (SVN working copies,
+# tarball sidecars, credential-adjacent config). Initialized so an EXIT
+# trap that fires before the first allocation is safe under `set -u`.
+RELEASE_TEMPDIRS=()
+
+function _cleanup_release_tempdirs {
+  # Command substitution inherits EXIT traps. Skip cleanup in subshells so
+  # a `path=$(mktemp ...)` inside this helper cannot wipe parent temp dirs.
+  [[ ${BASH_SUBSHELL} -eq 0 ]] || return 0
+  local d
+  for d in "${RELEASE_TEMPDIRS[@]+"${RELEASE_TEMPDIRS[@]}"}"; do
+    rm -rf "${d}"
+  done
+}
+
+# Creates a directory outside the repo working tree and stores its path in
+# the named variable. Call as `make_release_tempdir varname` (not inside
+# command substitution, which would lose the RELEASE_TEMPDIRS registration).
+# On GitHub Actions the parent is $RUNNER_TEMP (wiped per job); locally
+# $TMPDIR or /tmp. Removed on EXIT of the top-level shell.
+#
+# The destination variable must not be `local` in the caller: this uses
+# eval rather than namerefs so the helper runs on Bash 3.2.
+function make_release_tempdir {
+  if [[ $# -lt 1 ]]; then
+    echo "ERROR: make_release_tempdir requires a destination variable name" >&2
+    return 1
+  fi
+  if [[ ! "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "ERROR: make_release_tempdir: invalid variable name: $1" >&2
+    return 1
+  fi
+  if [[ ${BASH_SUBSHELL} -eq 0 && -z "${_RELEASE_TEMPDIR_TRAP_INSTALLED:-}" ]]; then
+    trap _cleanup_release_tempdirs EXIT
+    _RELEASE_TEMPDIR_TRAP_INSTALLED=1
+  fi
+  local parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+  local _release_td_path
+  _release_td_path="$(mktemp -d "${parent}/iceberg-release.XXXXXX")"
+  RELEASE_TEMPDIRS+=("${_release_td_path}")
+  # shellcheck disable=SC2086 # $1 is validated as an identifier above
+  eval "$1=\"\${_release_td_path}\""
+}
+
 # Writes "<sha512>  <basename>" to <source_file>.sha512. Done in a subshell
 # so the relative basename (rather than the full path) is recorded, matching
 # the format consumed by `shasum -c`.

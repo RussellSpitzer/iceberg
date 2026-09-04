@@ -130,6 +130,30 @@ setup() {
   rm -f "$tmpfile" "${tmpfile}.sha512"
 }
 
+@test "make_release_tempdir: creates a directory under RUNNER_TEMP when set" {
+  local parent
+  parent=$(mktemp -d)
+  RUNNER_TEMP="${parent}"
+  unset created
+  make_release_tempdir created
+  [[ "${created}" == "${parent}/iceberg-release."* ]]
+  [ -d "${created}" ]
+  rm -rf "${parent}"
+}
+
+@test "make_release_tempdir: requires a destination variable name" {
+  run make_release_tempdir
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"destination variable name"* ]]
+}
+
+@test "make_release_tempdir: EXIT trap is safe before any directory is allocated" {
+  # Re-source with a clean array and invoke the trap function directly.
+  RELEASE_TEMPDIRS=()
+  run _cleanup_release_tempdirs
+  [ "$status" -eq 0 ]
+}
+
 @test "calculate_sha512: dry-run does not create file" {
   DRY_RUN=1
   local tmpfile
