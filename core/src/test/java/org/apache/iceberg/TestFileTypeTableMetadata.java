@@ -43,6 +43,16 @@ class TestFileTypeTableMetadata {
   }
 
   @Test
+  void keepsTheFileTypeThroughSerialization() {
+    TableMetadata metadata = newTableMetadata(4);
+    TableMetadata reparsed = TableMetadataParser.fromJson(TableMetadataParser.toJson(metadata));
+
+    assertThat(reparsed.schema().findField("photo").type()).isEqualTo(Types.FileType.of(2));
+    assertThat(reparsed.lastColumnId()).isEqualTo(metadata.lastColumnId());
+    assertThat(reparsed.schema().asStruct()).isEqualTo(SCHEMA.asStruct());
+  }
+
+  @Test
   void acceptsAMetricsModeForAFileNestedField() {
     TableMetadata metadata =
         TableMetadata.newTableMetadata(
