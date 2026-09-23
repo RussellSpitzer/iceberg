@@ -21,6 +21,7 @@ package org.apache.iceberg;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -154,5 +155,66 @@ public class TestSchemaParser extends DataTestBase {
         .isEqualTo(defaultValue.value());
     assertThat(serialized.findField("col_with_default").writeDefault())
         .isEqualTo(defaultValue.value());
+  }
+
+  @Test
+  void writesAFileColumnAsTheFileTypeName() {
+    Schema schema =
+        new Schema(
+            required(1, "id", Types.LongType.get()), optional(2, "photo", Types.FileType.of(2)));
+
+    assertThat(SchemaParser.toJson(schema))
+        .isEqualTo(
+            "{\"type\":\"struct\",\"schema-id\":0,\"fields\":["
+                + "{\"id\":1,\"name\":\"id\",\"required\":true,\"type\":\"long\"},"
+                + "{\"id\":2,\"name\":\"photo\",\"required\":false,\"type\":\"file\"}]}");
+  }
+
+  private static Stream<Schema> schemasWithFiles() {
+    return Stream.of(
+        new Schema(
+            required(1, "id", Types.LongType.get()), optional(2, "photo", Types.FileType.of(2))),
+        new Schema(
+            optional(
+                1,
+                "media",
+                Types.StructType.of(
+                    optional(2, "photo", Types.FileType.of(2)),
+                    optional(9, "caption", Types.StringType.get())))),
+        new Schema(optional(1, "photos", Types.ListType.ofOptional(2, Types.FileType.of(2)))),
+        new Schema(
+            optional(
+                1,
+                "byName",
+                Types.MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3)))),
+        new Schema(
+            optional(
+                1,
+                "byFile",
+                Types.MapType.ofOptional(2, 20, Types.FileType.of(2), Types.StringType.get()))));
+  }
+
+  @ParameterizedTest
+  @MethodSource("schemasWithFiles")
+  void roundTripsAFileColumn(Schema schema) {
+    assertThat(SchemaParser.fromJson(SchemaParser.toJson(schema)).asStruct())
+        .isEqualTo(schema.asStruct());
+  }
+
+  @Test
+  void parsesTheFileTypeNameInAnyCase() {
+    String json =
+        "{\"type\":\"struct\",\"schema-id\":0,\"fields\":["
+            + "{\"id\":5,\"name\":\"photo\",\"required\":false,\"type\":\"FILE\"}]}";
+
+    assertThat(SchemaParser.fromJson(json).asStruct())
+        .isEqualTo(new Schema(optional(5, "photo", Types.FileType.of(5))).asStruct());
+  }
+
+  @Test
+  void rejectsAFileTypeWithoutAnEnclosingId() {
+    assertThatThrownBy(() -> SchemaParser.fromJson("\"file\""))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot parse file type without an enclosing field ID");
   }
 }
