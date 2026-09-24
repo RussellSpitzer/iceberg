@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.mapping.MappingUtil;
 import org.apache.iceberg.mapping.NameMapping;
@@ -63,6 +64,14 @@ public class TestORCSchemaUtil {
           required(115, "dec_11_2", Types.DecimalType.of(11, 2)),
           required(116, "dec_38_10", Types.DecimalType.of(38, 10)), // spark's maximum precision
           required(117, "variant", Types.VariantType.get()));
+  private static final Types.FileType PHOTO = Types.FileType.of(2);
+  private static final Schema FILE_SCHEMA =
+      new Schema(
+          required(1, "id", Types.LongType.get()),
+          optional(2, "photo", PHOTO),
+          optional(9, "data", Types.StringType.get()));
+  private static final String ORC_FILE_STRUCT =
+      "struct<uri:string,offset:bigint,size:bigint,content_type:string,checksum:string,inline:binary>";
 
   @Test
   public void testRoundtripConversionPrimitive() {
@@ -550,6 +559,79 @@ public class TestORCSchemaUtil {
     assertThat(equalsWithIds(expected, projectedOrcSchema))
         .as("Schema should be the prunned by projection")
         .isTrue();
+  }
+
+  @Test
+  void convertsFileToAnOrcStructTaggedAsAFile() {
+    TypeDescription photo = ORCSchemaUtil.convert(FILE_SCHEMA).getChildren().get(1);
+
+    assertThat(photo.toString()).isEqualTo(ORC_FILE_STRUCT);
+    assertThat(photo.getAttributeValue(ORCSchemaUtil.ICEBERG_STRUCT_TYPE_ATTRIBUTE))
+        .isEqualTo(ORCSchemaUtil.FILE);
+    assertThat(photo.getChildren().stream().map(ORCSchemaUtil::fieldId))
+        .containsExactlyElementsOf(fileFieldIds());
+  }
+
+  @Test
+  void buildsAFileProjectionOverTheNestedFields() {
+    TypeDescription photo =
+        ORCSchemaUtil.buildOrcProjection(FILE_SCHEMA, ORCSchemaUtil.convert(FILE_SCHEMA))
+            .getChildren()
+            .get(1);
+
+    assertThat(photo.toString()).isEqualTo(ORC_FILE_STRUCT);
+    assertThat(photo.getAttributeValue(ORCSchemaUtil.ICEBERG_STRUCT_TYPE_ATTRIBUTE))
+        .isEqualTo(ORCSchemaUtil.FILE);
+  }
+
+  @Test
+  void buildsAFileProjectionForAFileColumnMissingFromTheOrcSchema() {
+    Schema withoutPhoto =
+        new Schema(
+            required(1, "id", Types.LongType.get()), optional(9, "data", Types.StringType.get()));
+
+    TypeDescription photo =
+        ORCSchemaUtil.buildOrcProjection(FILE_SCHEMA, ORCSchemaUtil.convert(withoutPhoto))
+            .getChildren()
+            .get(1);
+
+    assertThat(photo.toString())
+        .isEqualTo(
+            String.format(
+                "struct<uri_r%d:string,offset_r%d:bigint,size_r%d:bigint,"
+                    + "content_type_r%d:string,checksum_r%d:string,inline_r%d:binary>",
+                fileFieldIds().toArray()));
+    assertThat(photo.getAttributeValue(ORCSchemaUtil.ICEBERG_STRUCT_TYPE_ATTRIBUTE))
+        .isEqualTo(ORCSchemaUtil.FILE);
+  }
+
+  @Test
+  void convertsFileBackToTheFileType() {
+    Schema converted = ORCSchemaUtil.convert(ORCSchemaUtil.convert(FILE_SCHEMA));
+
+    assertThat(converted.asStruct()).isEqualTo(FILE_SCHEMA.asStruct());
+  }
+
+  @Test
+  void keepsTheFileTagWhenRemovingIds() {
+    TypeDescription photo =
+        ORCSchemaUtil.removeIds(ORCSchemaUtil.convert(FILE_SCHEMA)).getChildren().get(1);
+
+    assertThat(photo.getAttributeValue(ORCSchemaUtil.ICEBERG_STRUCT_TYPE_ATTRIBUTE))
+        .isEqualTo(ORCSchemaUtil.FILE);
+  }
+
+  @Test
+  void convertsFileBackToTheFileTypeAfterANameMappingIsApplied() {
+    TypeDescription withoutIds = ORCSchemaUtil.removeIds(ORCSchemaUtil.convert(FILE_SCHEMA));
+    TypeDescription withIds =
+        ORCSchemaUtil.applyNameMapping(withoutIds, MappingUtil.create(FILE_SCHEMA));
+
+    assertThat(ORCSchemaUtil.convert(withIds).asStruct()).isEqualTo(FILE_SCHEMA.asStruct());
+  }
+
+  private static List<Integer> fileFieldIds() {
+    return PHOTO.fields().stream().map(Types.NestedField::fieldId).collect(Collectors.toList());
   }
 
   private static boolean equalsWithIds(TypeDescription first, TypeDescription second) {

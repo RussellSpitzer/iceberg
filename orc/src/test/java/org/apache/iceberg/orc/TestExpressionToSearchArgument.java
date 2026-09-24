@@ -248,6 +248,35 @@ public class TestExpressionToSearchArgument {
   }
 
   @Test
+  void doesNotPushDownPredicatesOnAFileColumn() {
+    Schema schema = new Schema(optional(1, "photo", Types.FileType.of(1)));
+    Expression boundFilter = Binder.bind(schema.asStruct(), isNull("photo"), true);
+    SearchArgument expected =
+        SearchArgumentFactory.newBuilder().literal(TruthValue.YES_NO_NULL).build();
+
+    SearchArgument actual =
+        ExpressionToSearchArgument.convert(boundFilter, ORCSchemaUtil.convert(schema));
+    assertThat(actual.toString()).isEqualTo(expected.toString());
+  }
+
+  @Test
+  void pushesDownPredicatesOnANestedFileField() {
+    Schema schema = new Schema(optional(1, "photo", Types.FileType.of(1)));
+    Expression boundFilter =
+        Binder.bind(schema.asStruct(), equal("photo.uri", "s3://bucket/full"), true);
+    SearchArgument expected =
+        SearchArgumentFactory.newBuilder()
+            .startAnd()
+            .equals("`photo`.`uri`", Type.STRING, "s3://bucket/full")
+            .end()
+            .build();
+
+    SearchArgument actual =
+        ExpressionToSearchArgument.convert(boundFilter, ORCSchemaUtil.convert(schema));
+    assertThat(actual.toString()).isEqualTo(expected.toString());
+  }
+
+  @Test
   public void testNestedPrimitives() {
     Schema schema =
         new Schema(

@@ -127,6 +127,11 @@ class IdToOrcName extends TypeUtil.SchemaVisitor<Map<Integer, String>> {
   }
 
   @Override
+  public Map<Integer, String> file(Types.FileType file, List<Map<Integer, String>> fieldResults) {
+    return struct(file.asStruct(), fieldResults);
+  }
+
+  @Override
   public Map<Integer, String> variant(Types.VariantType variant) {
     return idToName;
   }
