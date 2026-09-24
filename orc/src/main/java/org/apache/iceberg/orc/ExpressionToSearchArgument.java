@@ -62,6 +62,7 @@ class ExpressionToSearchArgument
           TypeID.FIXED,
           TypeID.UUID,
           TypeID.STRUCT,
+          TypeID.FILE,
           TypeID.MAP,
           TypeID.LIST,
           TypeID.VARIANT);
