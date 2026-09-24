@@ -52,6 +52,8 @@ public class ParquetTypeVisitor<T> {
         return visitVariant(group, visitor);
       }
 
+      // TODO: dispatch FILE-annotated groups to file(); RemoveIds and ApplyNameMapping must
+      // preserve the annotation
       return visitor.struct(group, visitFields(group, visitor));
     }
   }
