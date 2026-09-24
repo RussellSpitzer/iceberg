@@ -400,4 +400,60 @@ public class TestSchemaConversions {
       assertThat(variantSchema.getField("value").schema().getType()).isEqualTo(Schema.Type.BYTES);
     }
   }
+
+  @Test
+  public void fileRoundTripsAsStruct() {
+    Types.StructType struct =
+        Types.StructType.of(
+            required(1, "id", Types.LongType.get()), optional(2, "photo", Types.FileType.of(2)));
+
+    Types.StructType expected =
+        Types.StructType.of(
+            required(1, "id", Types.LongType.get()),
+            optional(2, "photo", Types.FileType.of(2).asStruct()));
+
+    assertThat(AvroSchemaUtil.convert(AvroSchemaUtil.convert(struct, "table"))).isEqualTo(expected);
+  }
+
+  @Test
+  public void fileInStructRoundTripsAsStruct() {
+    Types.StructType struct =
+        Types.StructType.of(
+            optional(
+                1,
+                "attachment",
+                Types.StructType.of(
+                    optional(2, "photo", Types.FileType.of(2)),
+                    optional(9, "thumbnail", Types.FileType.of(9)))));
+
+    Types.StructType expected =
+        Types.StructType.of(
+            optional(
+                1,
+                "attachment",
+                Types.StructType.of(
+                    optional(2, "photo", Types.FileType.of(2).asStruct()),
+                    optional(9, "thumbnail", Types.FileType.of(9).asStruct()))));
+
+    assertThat(AvroSchemaUtil.convert(AvroSchemaUtil.convert(struct, "table"))).isEqualTo(expected);
+  }
+
+  @Test
+  public void listOfFilesRoundTripsAsListOfStructs() {
+    Type list = Types.ListType.ofOptional(2, Types.FileType.of(2));
+
+    Type expected = Types.ListType.ofOptional(2, Types.FileType.of(2).asStruct());
+
+    assertThat(AvroSchemaUtil.convert(AvroSchemaUtil.convert(list))).isEqualTo(expected);
+  }
+
+  @Test
+  public void mapOfFilesRoundTripsAsMapOfStructs() {
+    Type map = Types.MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3));
+
+    Type expected =
+        Types.MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3).asStruct());
+
+    assertThat(AvroSchemaUtil.convert(AvroSchemaUtil.convert(map))).isEqualTo(expected);
+  }
 }

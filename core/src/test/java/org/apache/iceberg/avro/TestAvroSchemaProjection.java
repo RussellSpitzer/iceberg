@@ -169,4 +169,21 @@ public class TestAvroSchemaProjection {
     assertThat(variantSchema.getLogicalType()).isEqualTo(VariantLogicalType.get());
     assertThat(AvroSchemaUtil.isVariantSchema(variantSchema)).isTrue();
   }
+
+  @Test
+  void projectWithFileType() {
+    Schema icebergSchema =
+        new Schema(
+            Types.NestedField.required(1, "id", Types.LongType.get()),
+            Types.NestedField.optional(2, "photo", Types.FileType.of(2)));
+    Schema expectedSchema = icebergSchema.select("photo");
+
+    org.apache.avro.Schema projectedSchema =
+        AvroSchemaUtil.buildAvroProjection(
+            AvroSchemaUtil.convert(icebergSchema.asStruct()),
+            expectedSchema,
+            Collections.emptyMap());
+
+    assertThat(projectedSchema).isEqualTo(AvroSchemaUtil.convert(expectedSchema.asStruct()));
+  }
 }

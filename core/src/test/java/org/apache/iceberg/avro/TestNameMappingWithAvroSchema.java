@@ -20,10 +20,12 @@ package org.apache.iceberg.avro;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import org.apache.avro.Schema;
 import org.apache.iceberg.mapping.MappedField;
 import org.apache.iceberg.mapping.MappedFields;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.types.Types;
 import org.junit.jupiter.api.Test;
 
 public class TestNameMappingWithAvroSchema {
@@ -134,6 +136,29 @@ public class TestNameMappingWithAvroSchema {
     assertThat(
             AvroWithPartnerByStructureVisitor.visit(
                 icebergSchema.asStruct(), schema, nameMappingWithAvroSchema))
+        .isEqualTo(expected);
+  }
+
+  @Test
+  void nameMappingWithFileColumn() {
+    org.apache.iceberg.Schema icebergSchema =
+        new org.apache.iceberg.Schema(
+            Types.NestedField.required(1, "id", Types.LongType.get()),
+            Types.NestedField.optional(2, "photo", Types.FileType.of(2)));
+    Schema avroSchema = RemoveIds.removeIds(icebergSchema);
+
+    List<MappedField> fileFields = Lists.newArrayList();
+    for (Types.NestedField field : Types.FileType.of(2).fields()) {
+      fileFields.add(MappedField.of(field.fieldId(), field.name()));
+    }
+
+    MappedFields expected =
+        MappedFields.of(
+            MappedField.of(1, "id"), MappedField.of(2, "photo", MappedFields.of(fileFields)));
+
+    assertThat(
+            AvroWithPartnerByStructureVisitor.visit(
+                icebergSchema.asStruct(), avroSchema, new NameMappingWithAvroSchema()))
         .isEqualTo(expected);
   }
 }
