@@ -20,6 +20,7 @@ package org.apache.iceberg.aws.glue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.util.List;
 import java.util.Map;
@@ -217,6 +218,32 @@ public class TestIcebergToGlueConverter {
     assertThat(actualTableInput.storageDescriptor().columns())
         .as("Columns should match")
         .isEqualTo(expectedTableInput.storageDescriptor().columns());
+  }
+
+  @Test
+  void rendersAFileColumnAsAStruct() {
+    Schema schema =
+        new Schema(
+            Types.NestedField.required(1, "x", Types.StringType.get()),
+            Types.NestedField.optional(2, "photo", Types.FileType.of(2)));
+    TableMetadata tableMetadata =
+        TableMetadata.newTableMetadata(
+            schema,
+            PartitionSpec.unpartitioned(),
+            "s3://test",
+            ImmutableMap.of(TableProperties.FORMAT_VERSION, "4"));
+
+    TableInput.Builder builder = TableInput.builder();
+    IcebergToGlueConverter.setTableInputInformation(builder, tableMetadata);
+
+    assertThat(builder.build().storageDescriptor().columns())
+        .extracting(Column::name, Column::type)
+        .containsExactly(
+            tuple("x", "string"),
+            tuple(
+                "photo",
+                "struct<uri:string,offset:bigint,size:bigint,"
+                    + "content_type:string,checksum:string,inline:binary>"));
   }
 
   @Test

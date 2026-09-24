@@ -63,6 +63,7 @@ import org.apache.iceberg.types.Types.BooleanType;
 import org.apache.iceberg.types.Types.DateType;
 import org.apache.iceberg.types.Types.DecimalType;
 import org.apache.iceberg.types.Types.DoubleType;
+import org.apache.iceberg.types.Types.FileType;
 import org.apache.iceberg.types.Types.FixedType;
 import org.apache.iceberg.types.Types.FloatType;
 import org.apache.iceberg.types.Types.IntegerType;
@@ -160,6 +161,11 @@ public class TestRecordConverter {
 
   private static final org.apache.iceberg.Schema VARIANT_SCHEMA =
       new org.apache.iceberg.Schema(NestedField.required(1, "v", VariantType.get()));
+
+  private static final org.apache.iceberg.Schema FILE_SCHEMA =
+      new org.apache.iceberg.Schema(
+          NestedField.required(1, "id", IntegerType.get()),
+          NestedField.optional(2, "photo", FileType.of(2)));
 
   private static final Schema CONNECT_SCHEMA =
       SchemaBuilder.struct()
@@ -1110,6 +1116,79 @@ public class TestRecordConverter {
 
     assertThat(record.getField("id")).isEqualTo(1);
     assertThat(record.getField("data")).isNull();
+  }
+
+  @Test
+  void convertsAFileValueToTheStructOfItsNestedFields() {
+    Table table = mock(Table.class);
+    when(table.schema()).thenReturn(FILE_SCHEMA);
+    RecordConverter converter = new RecordConverter(table, config);
+
+    Record record =
+        converter.convert(
+            ImmutableMap.of(
+                "id", 1, "photo", ImmutableMap.of("uri", "s3://bucket/photo", "size", 1024L)));
+
+    assertThat(record.getField("photo")).isEqualTo(expectedPhoto());
+  }
+
+  @Test
+  void doesNotEvolveTheSchemaForAnExtraFieldInAFileStruct() {
+    Table table = mock(Table.class);
+    when(table.schema()).thenReturn(FILE_SCHEMA);
+    RecordConverter converter = new RecordConverter(table, config);
+
+    Schema connectPhotoSchema =
+        SchemaBuilder.struct()
+            .optional()
+            .field("uri", Schema.OPTIONAL_STRING_SCHEMA)
+            .field("size", Schema.OPTIONAL_INT64_SCHEMA)
+            .field("thumbprint", Schema.OPTIONAL_STRING_SCHEMA)
+            .build();
+    Schema connectSchema =
+        SchemaBuilder.struct()
+            .field("id", Schema.INT32_SCHEMA)
+            .field("photo", connectPhotoSchema)
+            .build();
+    Struct photo =
+        new Struct(connectPhotoSchema)
+            .put("uri", "s3://bucket/photo")
+            .put("size", 1024L)
+            .put("thumbprint", "abc");
+    Struct data = new Struct(connectSchema).put("id", 1).put("photo", photo);
+
+    SchemaUpdate.Consumer consumer = new SchemaUpdate.Consumer();
+    Record result = converter.convert(data, consumer);
+
+    assertThat(consumer.empty()).isTrue();
+    assertThat(result.getField("photo")).isEqualTo(expectedPhoto());
+  }
+
+  @Test
+  void doesNotEvolveTheSchemaForAnExtraFieldInAFileMap() {
+    Table table = mock(Table.class);
+    when(table.schema()).thenReturn(FILE_SCHEMA);
+    RecordConverter converter = new RecordConverter(table, config);
+
+    SchemaUpdate.Consumer consumer = new SchemaUpdate.Consumer();
+    Record result =
+        converter.convert(
+            ImmutableMap.of(
+                "id",
+                1,
+                "photo",
+                ImmutableMap.of("uri", "s3://bucket/photo", "size", 1024L, "thumbprint", "abc")),
+            consumer);
+
+    assertThat(consumer.empty()).isTrue();
+    assertThat(result.getField("photo")).isEqualTo(expectedPhoto());
+  }
+
+  private static GenericRecord expectedPhoto() {
+    GenericRecord photo = GenericRecord.create(FileType.of(2).asStruct());
+    photo.setField("uri", "s3://bucket/photo");
+    photo.setField("size", 1024L);
+    return photo;
   }
 
   @Test
