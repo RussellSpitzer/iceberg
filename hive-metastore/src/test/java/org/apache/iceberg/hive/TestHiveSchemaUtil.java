@@ -112,6 +112,10 @@ public class TestHiveSchemaUtil {
                   + "street_type:string>,country:string,postal_code:string>",
               ""));
 
+  private static final String HIVE_FILE_STRUCT =
+      "struct<uri:string,offset:bigint,size:bigint,"
+          + "content_type:string,checksum:string,inline:binary>";
+
   @Test
   public void testSimpleSchemaConvertToIcebergSchema() {
     assertThat(HiveSchemaUtil.convert(SIMPLE_HIVE_SCHEMA).asStruct())
@@ -210,6 +214,35 @@ public class TestHiveSchemaUtil {
     Schema schema = new Schema(optional(0, "variant_field", Types.VariantType.get()));
     List<FieldSchema> hiveSchema = HiveSchemaUtil.convert(schema);
     assertThat(hiveSchema).containsExactly(new FieldSchema("variant_field", "unknown", null));
+  }
+
+  @Test
+  void convertsAFileColumnToAHiveStruct() {
+    Schema schema = new Schema(optional(1, "photo", Types.FileType.of(1)));
+
+    assertThat(HiveSchemaUtil.convert(schema))
+        .containsExactly(new FieldSchema("photo", HIVE_FILE_STRUCT, null));
+  }
+
+  @Test
+  void convertsAFileListElementToAHiveStruct() {
+    Schema schema =
+        new Schema(optional(1, "photos", Types.ListType.ofOptional(2, Types.FileType.of(2))));
+
+    assertThat(HiveSchemaUtil.convert(schema))
+        .containsExactly(new FieldSchema("photos", "array<" + HIVE_FILE_STRUCT + ">", null));
+  }
+
+  @Test
+  void convertsAFileStructFieldToAHiveStruct() {
+    Schema schema =
+        new Schema(
+            optional(
+                1, "wrapper", Types.StructType.of(optional(2, "photo", Types.FileType.of(2)))));
+
+    assertThat(HiveSchemaUtil.convert(schema))
+        .containsExactly(
+            new FieldSchema("wrapper", "struct<photo:" + HIVE_FILE_STRUCT + ">", null));
   }
 
   protected List<FieldSchema> getSupportedFieldSchemas() {

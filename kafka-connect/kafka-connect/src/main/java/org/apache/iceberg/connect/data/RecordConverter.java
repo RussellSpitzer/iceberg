@@ -133,6 +133,9 @@ class RecordConverter {
     switch (type.typeId()) {
       case STRUCT:
         return convertStructValue(value, type.asStructType(), fieldId, schemaUpdateConsumer);
+      case FILE:
+        // file nested fields are fixed and cannot evolve
+        return convertStructValue(value, type.asFileType().asStruct(), fieldId, null);
       case LIST:
         return convertListValue(value, type.asListType(), schemaUpdateConsumer);
       case MAP:
@@ -326,7 +329,7 @@ class RecordConverter {
                   field.schema(), nestedField.type(), nestedField.fieldId(), schemaUpdateConsumer);
             }
           }
-        } else {
+        } else if (!tableType.isFileType()) {
           logMismatchedType(recordSchema.type(), tableType);
         }
         break;

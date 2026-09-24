@@ -86,6 +86,11 @@ public class ArrowSchemaUtil {
     }
 
     @Override
+    public Field file(Types.FileType file, List<Field> fieldResults) {
+      return struct(file.asStruct(), fieldResults);
+    }
+
+    @Override
     public Field field(NestedField field, Field fieldResult) {
       return fieldResult;
     }
