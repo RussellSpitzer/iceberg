@@ -65,7 +65,11 @@ public class RandomAvroData {
 
     @Override
     public Record struct(Types.StructType struct, Iterable<Object> fieldResults) {
-      Record rec = new Record(typeToSchema.get(struct));
+      return record(struct, fieldResults);
+    }
+
+    private Record record(Type type, Iterable<Object> fieldResults) {
+      Record rec = new Record(typeToSchema.get(type));
 
       List<Object> values = Lists.newArrayList(fieldResults);
       for (int i = 0; i < values.size(); i += 1) {
@@ -97,6 +101,11 @@ public class RandomAvroData {
     @Override
     public Object variant(Types.VariantType variant) {
       return RandomVariants.randomVariant(random);
+    }
+
+    @Override
+    public Object file(Types.FileType file, Iterable<Object> fieldResults) {
+      return record(file, fieldResults);
     }
 
     @Override

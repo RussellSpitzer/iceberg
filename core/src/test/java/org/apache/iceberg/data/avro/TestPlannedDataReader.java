@@ -25,6 +25,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -46,6 +47,7 @@ import org.apache.iceberg.Files;
 import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.avro.AvroIterable;
+import org.apache.iceberg.avro.AvroSchemaUtil;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
@@ -197,6 +199,45 @@ public class TestPlannedDataReader {
         .isEqualTo(preEpochTimestampMicros.withOffsetSameInstant(ZoneOffset.UTC));
     assertThat(preEpochResult.getField("timestamp_millis_tz"))
         .isEqualTo(preEpochTimestampMillis.withOffsetSameInstant(ZoneOffset.UTC));
+  }
+
+  @Test
+  void fileDataReader() throws IOException {
+    org.apache.iceberg.Schema icebergSchema =
+        new org.apache.iceberg.Schema(
+            Types.NestedField.required(1, "id", Types.LongType.get()),
+            Types.NestedField.optional(2, "photo", Types.FileType.of(2)));
+    Types.FileType fileType = icebergSchema.findType("photo").asFileType();
+    ByteBuffer inline = ByteBuffer.wrap(new byte[] {1, 2, 3});
+
+    Schema avroSchema = AvroSchemaUtil.convert(icebergSchema, "test");
+    GenericRecord avroPhoto =
+        new GenericData.Record(avroSchema.getField("photo").schema().getTypes().get(1));
+    avroPhoto.put("uri", "s3://bucket/photo.png");
+    avroPhoto.put("offset", 128L);
+    avroPhoto.put("size", 1024L);
+    avroPhoto.put("content_type", "image/png");
+    avroPhoto.put("checksum", "abc123");
+    avroPhoto.put("inline", inline);
+    GenericRecord avroRecord = new GenericData.Record(avroSchema);
+    avroRecord.put("id", 34L);
+    avroRecord.put("photo", avroPhoto);
+
+    PlannedDataReader<Record> reader = PlannedDataReader.create(icebergSchema);
+    reader.setSchema(avroSchema);
+
+    Record expectedPhoto = org.apache.iceberg.data.GenericRecord.create(fileType.asStruct());
+    expectedPhoto.setField("uri", "s3://bucket/photo.png");
+    expectedPhoto.setField("offset", 128L);
+    expectedPhoto.setField("size", 1024L);
+    expectedPhoto.setField("content_type", "image/png");
+    expectedPhoto.setField("checksum", "abc123");
+    expectedPhoto.setField("inline", inline);
+    Record expected = org.apache.iceberg.data.GenericRecord.create(icebergSchema);
+    expected.setField("id", 34L);
+    expected.setField("photo", expectedPhoto);
+
+    assertThat(readRecord(reader, avroSchema, avroRecord)).isEqualTo(expected);
   }
 
   @Test

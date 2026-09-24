@@ -93,6 +93,11 @@ public class RandomInternalData {
     }
 
     @Override
+    public Object file(Types.FileType file, Iterable<Object> fieldResults) {
+      return struct(file.asStruct(), fieldResults);
+    }
+
+    @Override
     public Object primitive(Type.PrimitiveType primitive) {
       Object result = RandomUtil.generatePrimitive(primitive, random);
 

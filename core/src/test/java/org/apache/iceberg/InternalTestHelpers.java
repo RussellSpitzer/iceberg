@@ -100,6 +100,11 @@ public class InternalTestHelpers {
         assertThat(actual).as("Actual should be a StructLike").isInstanceOf(StructLike.class);
         assertEquals(type.asStructType(), (Record) expected, (Record) actual);
         break;
+      case FILE:
+        assertThat(expected).as("Expected should be a StructLike").isInstanceOf(StructLike.class);
+        assertThat(actual).as("Actual should be a StructLike").isInstanceOf(StructLike.class);
+        assertEquals(type.asFileType().asStruct(), (Record) expected, (Record) actual);
+        break;
       case LIST:
         assertThat(expected).as("Expected should be a List").isInstanceOf(List.class);
         assertThat(actual).as("Actual should be a List").isInstanceOf(List.class);

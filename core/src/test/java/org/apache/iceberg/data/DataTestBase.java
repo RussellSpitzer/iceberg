@@ -154,6 +154,10 @@ public abstract class DataTestBase {
     return false;
   }
 
+  protected boolean supportsFile() {
+    return false;
+  }
+
   @ParameterizedTest
   @FieldSource("SIMPLE_TYPES")
   public void testTypeSchema(Type type) throws IOException {
@@ -262,6 +266,43 @@ public abstract class DataTestBase {
             required(0, "id", LongType.get()),
             optional(
                 1, "data", MapType.ofOptional(2, 3, Types.StringType.get(), SUPPORTED_PRIMITIVES)));
+
+    writeAndValidate(schema);
+  }
+
+  @Test
+  public void fileColumn() throws IOException {
+    assumeThat(supportsFile()).as("file is not yet implemented").isTrue();
+
+    Schema schema =
+        new Schema(required(1, "id", LongType.get()), optional(2, "photo", Types.FileType.of(2)));
+
+    writeAndValidate(schema);
+  }
+
+  @Test
+  public void listOfFiles() throws IOException {
+    assumeThat(supportsFile()).as("file is not yet implemented").isTrue();
+
+    Schema schema =
+        new Schema(
+            required(0, "id", LongType.get()),
+            optional(1, "photos", ListType.ofOptional(2, Types.FileType.of(2))));
+
+    writeAndValidate(schema);
+  }
+
+  @Test
+  public void mapOfFiles() throws IOException {
+    assumeThat(supportsFile()).as("file is not yet implemented").isTrue();
+
+    Schema schema =
+        new Schema(
+            required(0, "id", LongType.get()),
+            optional(
+                1,
+                "photos",
+                MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3))));
 
     writeAndValidate(schema);
   }
