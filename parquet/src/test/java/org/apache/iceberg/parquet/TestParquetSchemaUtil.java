@@ -66,6 +66,11 @@ public class TestParquetSchemaUtil {
           required(115, "dec_11_2", Types.DecimalType.of(11, 2)),
           required(116, "dec_38_10", Types.DecimalType.of(38, 10)) // spark's maximum precision
           );
+  private static final Schema FILE_SCHEMA =
+      new Schema(
+          required(1, "id", Types.LongType.get()),
+          optional(2, "photo", Types.FileType.of(2)),
+          optional(9, "data", Types.StringType.get()));
 
   @Test
   public void testAssignIdsByNameMapping() {
@@ -619,6 +624,114 @@ public class TestParquetSchemaUtil {
     assertThat(actualSchema.asStruct())
         .as("Schema must match")
         .isEqualTo(expectedSchema.asStruct());
+  }
+
+  @Test
+  void convertsFileToAGroupOfNestedFields() {
+    MessageType expected =
+        MessageTypeParser.parseMessageType(
+            "message table {"
+                + "  required int64 id = 1;"
+                + "  optional group photo = 2 {"
+                + "    optional binary uri (STRING) = 3;"
+                + "    optional int64 offset = 4;"
+                + "    optional int64 size = 5;"
+                + "    optional binary content_type (STRING) = 6;"
+                + "    optional binary checksum (STRING) = 7;"
+                + "    optional binary inline = 8;"
+                + "  }"
+                + "  optional binary data (STRING) = 9;"
+                + "}");
+
+    assertThat(ParquetSchemaUtil.convert(FILE_SCHEMA, "table")).isEqualTo(expected);
+  }
+
+  @Test
+  void convertsRequiredFile() {
+    Schema schema = new Schema(required(2, "photo", Types.FileType.of(2)));
+
+    MessageType expected =
+        MessageTypeParser.parseMessageType(
+            "message table {"
+                + "  required group photo = 2 {"
+                + "    optional binary uri (STRING) = 3;"
+                + "    optional int64 offset = 4;"
+                + "    optional int64 size = 5;"
+                + "    optional binary content_type (STRING) = 6;"
+                + "    optional binary checksum (STRING) = 7;"
+                + "    optional binary inline = 8;"
+                + "  }"
+                + "}");
+
+    assertThat(ParquetSchemaUtil.convert(schema, "table")).isEqualTo(expected);
+  }
+
+  @Test
+  void convertsFileListElement() {
+    Schema schema =
+        new Schema(optional(1, "photos", Types.ListType.ofOptional(2, Types.FileType.of(2))));
+
+    MessageType expected =
+        MessageTypeParser.parseMessageType(
+            "message table {"
+                + "  optional group photos (LIST) = 1 {"
+                + "    repeated group list {"
+                + "      optional group element = 2 {"
+                + "        optional binary uri (STRING) = 3;"
+                + "        optional int64 offset = 4;"
+                + "        optional int64 size = 5;"
+                + "        optional binary content_type (STRING) = 6;"
+                + "        optional binary checksum (STRING) = 7;"
+                + "        optional binary inline = 8;"
+                + "      }"
+                + "    }"
+                + "  }"
+                + "}");
+
+    assertThat(ParquetSchemaUtil.convert(schema, "table")).isEqualTo(expected);
+  }
+
+  @Test
+  void convertsFileMapValue() {
+    Schema schema =
+        new Schema(
+            optional(
+                1,
+                "byName",
+                Types.MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3))));
+
+    MessageType expected =
+        MessageTypeParser.parseMessageType(
+            "message table {"
+                + "  optional group byName (MAP) = 1 {"
+                + "    repeated group key_value {"
+                + "      required binary key (STRING) = 2;"
+                + "      optional group value = 3 {"
+                + "        optional binary uri (STRING) = 4;"
+                + "        optional int64 offset = 5;"
+                + "        optional int64 size = 6;"
+                + "        optional binary content_type (STRING) = 7;"
+                + "        optional binary checksum (STRING) = 8;"
+                + "        optional binary inline = 9;"
+                + "      }"
+                + "    }"
+                + "  }"
+                + "}");
+
+    assertThat(ParquetSchemaUtil.convert(schema, "table")).isEqualTo(expected);
+  }
+
+  @Test
+  void convertsFileGroupBackToStruct() {
+    Schema expected =
+        new Schema(
+            required(1, "id", Types.LongType.get()),
+            optional(2, "photo", Types.StructType.of(Types.FileType.of(2).fields())),
+            optional(9, "data", Types.StringType.get()));
+
+    Schema converted = ParquetSchemaUtil.convert(ParquetSchemaUtil.convert(FILE_SCHEMA, "table"));
+
+    assertThat(converted.asStruct()).isEqualTo(expected.asStruct());
   }
 
   private Type primitive(

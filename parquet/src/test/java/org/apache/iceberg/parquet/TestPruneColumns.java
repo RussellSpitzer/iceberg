@@ -25,6 +25,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.types.EdgeAlgorithm;
 import org.apache.iceberg.types.Types.DoubleType;
+import org.apache.iceberg.types.Types.FileType;
 import org.apache.iceberg.types.Types.GeographyType;
 import org.apache.iceberg.types.Types.GeometryType;
 import org.apache.iceberg.types.Types.IntegerType;
@@ -45,6 +46,12 @@ import org.apache.parquet.schema.Types;
 import org.junit.jupiter.api.Test;
 
 public class TestPruneColumns {
+  private static final Schema FILE_SCHEMA =
+      new Schema(
+          NestedField.required(1, "id", LongType.get()),
+          NestedField.optional(2, "photo", FileType.of(2)),
+          NestedField.optional(9, "data", StringType.get()));
+
   @Test
   public void testMapKeyValueName() {
     MessageType fileSchema =
@@ -309,6 +316,26 @@ public class TestPruneColumns {
 
     MessageType actual = ParquetSchemaUtil.pruneColumns(fileSchema, projection);
     assertThat(actual).as("Pruned schema should be matched").isEqualTo(expected);
+  }
+
+  @Test
+  void prunesFileToASingleNestedField() {
+    Schema projection = FILE_SCHEMA.select("photo.uri");
+    MessageType expected = ParquetSchemaUtil.convert(projection, "table");
+
+    MessageType actual =
+        ParquetSchemaUtil.pruneColumns(ParquetSchemaUtil.convert(FILE_SCHEMA, "table"), projection);
+    assertThat(actual).isEqualTo(expected);
+  }
+
+  @Test
+  void keepsAllNestedFieldsOfAFileSelectedById() {
+    Schema projection = FILE_SCHEMA.select("photo");
+    MessageType expected = ParquetSchemaUtil.convert(projection, "table");
+
+    MessageType actual =
+        ParquetSchemaUtil.pruneColumns(ParquetSchemaUtil.convert(FILE_SCHEMA, "table"), projection);
+    assertThat(actual).isEqualTo(expected);
   }
 
   private static MessageType deepNestedFileSchema() {
