@@ -27,6 +27,7 @@ import static org.apache.iceberg.TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -34,6 +35,7 @@ import javax.annotation.concurrent.Immutable;
 import org.apache.iceberg.MetricsModes.MetricsMode;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
@@ -50,6 +52,8 @@ import org.slf4j.LoggerFactory;
 public final class MetricsConfig implements Serializable {
 
   private static final Logger LOG = LoggerFactory.getLogger(MetricsConfig.class);
+  private static final List<String> FILE_FIELDS_WITH_INFERRED_METRICS =
+      ImmutableList.of("uri", "size", "content_type");
 
   // Disable metrics by default for wide tables to prevent excessive metadata
   private static final MetricsMode DEFAULT_MODE =
@@ -191,6 +195,17 @@ public final class MetricsConfig implements Serializable {
           }
 
           @Override
+          public Set<Integer> file(Types.FileType file, Iterable<Set<Integer>> fieldResults) {
+            for (String name : FILE_FIELDS_WITH_INFERRED_METRICS) {
+              if (shouldContinue()) {
+                idSet.add(file.field(name).fieldId());
+              }
+            }
+
+            return null;
+          }
+
+          @Override
           @SuppressWarnings("ReturnValueIgnored")
           public Set<Integer> field(Types.NestedField field, Supplier<Set<Integer>> fieldResult) {
             fieldResult.get();
@@ -277,6 +292,9 @@ public final class MetricsConfig implements Serializable {
 
     columnModes.putAll(defaultColumnConf);
 
+    // Skip file fields that are not useful for pruning (overridden by config)
+    columnModes.putAll(fileColumnModes(schema));
+
     // Default sort columns to at least truncate (overridden by config)
     columnModes.putAll(sortColumnModes(order, configuredDefault));
 
@@ -311,6 +329,34 @@ public final class MetricsConfig implements Serializable {
     }
 
     return builder.build();
+  }
+
+  private static Map<String, MetricsMode> fileColumnModes(Schema schema) {
+    ImmutableMap.Builder<String, MetricsMode> builder = ImmutableMap.builder();
+    if (schema != null) {
+      addFileColumnModes(schema, schema.asStruct(), builder);
+    }
+
+    return builder.build();
+  }
+
+  private static void addFileColumnModes(
+      Schema schema, Type type, ImmutableMap.Builder<String, MetricsMode> builder) {
+    if (!type.isNestedType()) {
+      return;
+    }
+
+    for (Types.NestedField field : type.asNestedType().fields()) {
+      if (field.type().isFileType()) {
+        for (Types.NestedField nested : field.type().asFileType().fields()) {
+          if (!FILE_FIELDS_WITH_INFERRED_METRICS.contains(nested.name())) {
+            builder.put(schema.findColumnName(nested.fieldId()), MetricsModes.None.get());
+          }
+        }
+      } else {
+        addFileColumnModes(schema, field.type(), builder);
+      }
+    }
   }
 
   private static Map<String, MetricsMode> sortColumnModes(

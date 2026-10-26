@@ -221,6 +221,64 @@ public class TestMetricsConfig {
   }
 
   @Test
+  void metricsModesForFileNestedFields() {
+    Schema schema =
+        new Schema(
+            required(1, "id", Types.LongType.get()), optional(2, "photo", Types.FileType.of(2)));
+
+    Map<String, String> properties =
+        Map.of(TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX + "photo.size", "full");
+
+    MetricsConfig config = MetricsTestUtil.from(properties, schema);
+
+    assertThat(config.columnMode("photo.size")).isEqualTo(MetricsModes.Full.get());
+    assertThat(config.columnMode("photo.uri")).isEqualTo(MetricsModes.Truncate.withLength(16));
+  }
+
+  @Test
+  void fileColumnUsesInferredDefaultsOnlyForFilterableFields() {
+    Schema schema =
+        new Schema(
+            required(1, "id", Types.LongType.get()),
+            optional(2, "photo", Types.FileType.of(2)),
+            optional(9, "data", Types.StringType.get()));
+
+    // id, photo.uri, photo.size, photo.content_type, and data
+    Map<String, String> properties =
+        Map.of(TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS, "5");
+
+    MetricsConfig config = MetricsTestUtil.from(properties, schema);
+
+    assertThat(config.columnMode("data")).isEqualTo(MetricsModes.Truncate.withLength(16));
+  }
+
+  @Test
+  void fileFieldsWithoutPruningValueDefaultToNone() {
+    Schema schema =
+        new Schema(
+            required(1, "id", Types.LongType.get()), optional(2, "photo", Types.FileType.of(2)));
+
+    MetricsConfig config = MetricsTestUtil.from(ImmutableMap.of(), schema);
+
+    assertThat(config.columnMode("photo.offset")).isEqualTo(MetricsModes.None.get());
+    assertThat(config.columnMode("photo.checksum")).isEqualTo(MetricsModes.None.get());
+    assertThat(config.columnMode("photo.inline")).isEqualTo(MetricsModes.None.get());
+  }
+
+  @Test
+  void configuredModeOverridesTheFileFieldDefault() {
+    Schema schema =
+        new Schema(
+            required(1, "id", Types.LongType.get()), optional(2, "photo", Types.FileType.of(2)));
+    Map<String, String> properties =
+        Map.of(TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX + "photo.checksum", "full");
+
+    MetricsConfig config = MetricsTestUtil.from(properties, schema);
+
+    assertThat(config.columnMode("photo.checksum")).isEqualTo(MetricsModes.Full.get());
+  }
+
+  @Test
   void configCannotDisablePartitionSourceMetrics() {
     PartitionSpec spec = PartitionSpec.builderFor(SCHEMA).identity("category").build();
     Map<String, String> props =

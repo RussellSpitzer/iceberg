@@ -2342,4 +2342,40 @@ public class TestTableMetadata {
     assertThat(updated.currentSnapshot().timestampMillis()).isEqualTo(snapshotTs);
     assertThat(updated.lastUpdatedMillis()).isLessThan(snapshotTs);
   }
+
+  @Test
+  void replacementReservesDerivedIdsWhenAColumnBecomesAFile() {
+    TableMetadata metadata =
+        TableMetadata.newTableMetadata(
+            new Schema(
+                Types.NestedField.required(1, "id", Types.LongType.get()),
+                Types.NestedField.optional(2, "photo", Types.StringType.get()),
+                Types.NestedField.optional(3, "data", Types.StringType.get())),
+            PartitionSpec.unpartitioned(),
+            "file:/tmp/table",
+            ImmutableMap.of(TableProperties.FORMAT_VERSION, "4"));
+    Schema updated =
+        new Schema(
+            Types.NestedField.required(100, "id", Types.LongType.get()),
+            Types.NestedField.optional(101, "photo", Types.FileType.of(101)),
+            Types.NestedField.optional(108, "data", Types.StringType.get()),
+            Types.NestedField.optional(109, "notes", Types.StringType.get()));
+    Schema expected =
+        new Schema(
+            Types.NestedField.required(1, "id", Types.LongType.get()),
+            Types.NestedField.optional(4, "photo", Types.FileType.of(4)),
+            Types.NestedField.optional(3, "data", Types.StringType.get()),
+            Types.NestedField.optional(11, "notes", Types.StringType.get()));
+
+    TableMetadata replacement =
+        metadata.buildReplacement(
+            updated,
+            PartitionSpec.unpartitioned(),
+            SortOrder.unsorted(),
+            metadata.location(),
+            ImmutableMap.of());
+
+    assertThat(replacement.schema().asStruct()).isEqualTo(expected.asStruct());
+    assertThat(replacement.lastColumnId()).isEqualTo(expected.highestFieldId());
+  }
 }
