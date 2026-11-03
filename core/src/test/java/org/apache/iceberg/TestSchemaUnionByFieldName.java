@@ -54,6 +54,8 @@ import org.apache.iceberg.types.Types.VariantType;
 import org.junit.jupiter.api.Test;
 
 public class TestSchemaUnionByFieldName {
+  private static final Schema FILE_SCHEMA =
+      new Schema(required(1, "id", LongType.get()), optional(2, "photo", Types.FileType.of(2)));
 
   private static List<? extends Type> primitiveTypes() {
     return Lists.newArrayList(
@@ -662,5 +664,54 @@ public class TestSchemaUnionByFieldName {
                                         ListType.ofOptional(7, StringType.get())))))))));
 
     assertThat(union.asStruct()).isEqualTo(expected.asStruct());
+  }
+
+  @Test
+  void addNewFileColumn() {
+    Schema schema = new Schema(required(1, "id", LongType.get()));
+    Schema observed =
+        new Schema(
+            required(1, "id", LongType.get()),
+            optional(5, "photo", Types.FileType.of(5)),
+            optional(20, "data", StringType.get()));
+
+    Schema union = new SchemaUpdate(schema, 1).unionByNameWith(observed).apply();
+
+    Schema expected =
+        new Schema(
+            required(1, "id", LongType.get()),
+            optional(2, "photo", Types.FileType.of(2)),
+            optional(9, "data", StringType.get()));
+    assertThat(union.asStruct()).isEqualTo(expected.asStruct());
+  }
+
+  @Test
+  void unionIdenticalFileColumn() {
+    Schema union =
+        new SchemaUpdate(FILE_SCHEMA, FILE_SCHEMA.highestFieldId())
+            .unionByNameWith(FILE_SCHEMA)
+            .apply();
+
+    assertThat(union.asStruct()).isEqualTo(FILE_SCHEMA.asStruct());
+  }
+
+  @Test
+  void cannotAddToFileColumn() {
+    Schema observed =
+        new Schema(
+            required(1, "id", LongType.get()),
+            optional(
+                2,
+                "photo",
+                StructType.of(
+                    optional(3, "uri", StringType.get()),
+                    optional(10, "extra", StringType.get()))));
+
+    assertThatThrownBy(
+            () ->
+                new SchemaUpdate(FILE_SCHEMA, FILE_SCHEMA.highestFieldId())
+                    .unionByNameWith(observed))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot add to non-struct column: photo: file");
   }
 }
