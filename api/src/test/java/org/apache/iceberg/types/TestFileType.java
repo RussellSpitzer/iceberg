@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.StructLike;
 import org.junit.jupiter.api.Test;
 
 class TestFileType {
@@ -339,5 +340,43 @@ class TestFileType {
     Schema reassigned = TypeUtil.reassignOrRefreshIds(unassigned, source);
 
     assertThat(reassigned.asStruct()).isEqualTo(expected.asStruct());
+  }
+
+  @Test
+  void isHashedByItsNestedFieldsRatherThanItsIdentity() {
+    JavaHash<StructLike> hash = JavaHash.forType(FILE);
+
+    // an identity-hashed row stands in for the row types that do not implement hashCode
+    assertThat(hash.hash(identityHashedFile("s3://bucket/a")))
+        .isEqualTo(hash.hash(identityHashedFile("s3://bucket/a")));
+    assertThat(hash.hash(identityHashedFile("s3://bucket/a")))
+        .isNotEqualTo(hash.hash(identityHashedFile("s3://bucket/b")));
+  }
+
+  private static StructLike identityHashedFile(String uri) {
+    return new IdentityHashedRow(uri, 0L, 1L, "image/png", "abc", null);
+  }
+
+  private static class IdentityHashedRow implements StructLike {
+    private final Object[] values;
+
+    private IdentityHashedRow(Object... values) {
+      this.values = values;
+    }
+
+    @Override
+    public int size() {
+      return values.length;
+    }
+
+    @Override
+    public <T> T get(int pos, Class<T> javaClass) {
+      return javaClass.cast(values[pos]);
+    }
+
+    @Override
+    public <T> void set(int pos, T value) {
+      values[pos] = value;
+    }
   }
 }

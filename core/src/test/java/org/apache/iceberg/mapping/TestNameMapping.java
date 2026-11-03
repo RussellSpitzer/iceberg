@@ -22,7 +22,9 @@ import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Types;
 import org.junit.jupiter.api.Test;
 
@@ -297,6 +299,21 @@ public class TestNameMapping {
             required(1, "id", Types.LongType.get()), required(2, "data", Types.VariantType.get()));
 
     MappedFields expected = MappedFields.of(MappedField.of(1, "id"), MappedField.of(2, "data"));
+
+    NameMapping mapping = MappingUtil.create(schema);
+    assertThat(mapping.asMappedFields()).isEqualTo(expected);
+  }
+
+  @Test
+  void fileSchemaToMapping() {
+    Types.FileType file = Types.FileType.of(2);
+    Schema schema = new Schema(required(1, "id", Types.LongType.get()), required(2, "photo", file));
+
+    List<MappedField> fileFields = Lists.newArrayList();
+    file.fields().forEach(field -> fileFields.add(MappedField.of(field.fieldId(), field.name())));
+    MappedFields expected =
+        MappedFields.of(
+            MappedField.of(1, "id"), MappedField.of(2, "photo", MappedFields.of(fileFields)));
 
     NameMapping mapping = MappingUtil.create(schema);
     assertThat(mapping.asMappedFields()).isEqualTo(expected);

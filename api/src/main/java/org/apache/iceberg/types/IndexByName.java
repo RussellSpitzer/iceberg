@@ -110,10 +110,10 @@ public class IndexByName extends TypeUtil.SchemaVisitor<Map<String, Integer>> {
   public void beforeListElement(Types.NestedField elementField) {
     fieldNames.push(elementField.name());
 
-    // only add "element" to the short name if the element is not a struct, so that names are more
-    // natural
+    // only add "element" to the short name if the element is not a struct or file, so that names
+    // are more natural
     // for example, locations.latitude instead of locations.element.latitude
-    if (!elementField.type().isStructType()) {
+    if (!hasNestedFields(elementField)) {
       shortFieldNames.push(elementField.name());
     }
   }
@@ -123,7 +123,7 @@ public class IndexByName extends TypeUtil.SchemaVisitor<Map<String, Integer>> {
     fieldNames.pop();
 
     // only remove "element" if it was added
-    if (!elementField.type().isStructType()) {
+    if (!hasNestedFields(elementField)) {
       shortFieldNames.pop();
     }
   }
@@ -142,8 +142,9 @@ public class IndexByName extends TypeUtil.SchemaVisitor<Map<String, Integer>> {
   public void beforeMapValue(Types.NestedField valueField) {
     fieldNames.push(valueField.name());
 
-    // only add "value" to the name if the value is not a struct, so that names are more natural
-    if (!valueField.type().isStructType()) {
+    // only add "value" to the name if the value is not a struct or file, so that names are more
+    // natural
+    if (!hasNestedFields(valueField)) {
       shortFieldNames.push(valueField.name());
     }
   }
@@ -153,9 +154,13 @@ public class IndexByName extends TypeUtil.SchemaVisitor<Map<String, Integer>> {
     fieldNames.pop();
 
     // only remove "value" if it was added
-    if (!valueField.type().isStructType()) {
+    if (!hasNestedFields(valueField)) {
       shortFieldNames.pop();
     }
+  }
+
+  private static boolean hasNestedFields(Types.NestedField field) {
+    return field.type().isStructType() || field.type().isFileType();
   }
 
   @Override

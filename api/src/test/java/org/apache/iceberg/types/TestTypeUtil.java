@@ -23,6 +23,8 @@ import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +41,10 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 public class TestTypeUtil {
+  private static final Types.FileType FILE = Types.FileType.of(2);
+  private static final Schema FILE_SCHEMA =
+      new Schema(required(1, "id", Types.LongType.get()), optional(2, "photo", FILE));
+
   @Test
   public void testReassignIdsDuplicateColumns() {
     Schema schema =
@@ -1180,5 +1186,260 @@ public class TestTypeUtil {
     Schema schema = new Schema(required(1, "id", IntegerType.get()));
     Schema result = TypeUtil.replaceFieldTypes(schema, ImmutableMap.of(99, Types.LongType.get()));
     assertThat(result).isSameAs(schema);
+  }
+
+  @Test
+  void projectKeepsTheFileTypeWhenAllNestedFieldsRemain() {
+    Set<Integer> nestedIds = Sets.newHashSet();
+    FILE.fields().forEach(field -> nestedIds.add(field.fieldId()));
+
+    Schema projected = TypeUtil.project(FILE_SCHEMA, nestedIds);
+
+    assertThat(projected.asStruct()).isEqualTo(Types.StructType.of(optional(2, "photo", FILE)));
+  }
+
+  @Test
+  void projectDropsTheFileTypeWhenNestedFieldsArePruned() {
+    Types.NestedField uri = FILE.field("uri");
+
+    Schema projected = TypeUtil.project(FILE_SCHEMA, Sets.newHashSet(uri.fieldId()));
+
+    assertThat(projected.asStruct())
+        .isEqualTo(Types.StructType.of(optional(2, "photo", Types.StructType.of(uri))));
+  }
+
+  @Test
+  void projectSelectsAFileWithoutNestedFieldsAsAnEmptyStruct() {
+    Schema projected = TypeUtil.project(FILE_SCHEMA, Sets.newHashSet(2));
+
+    assertThat(projected.asStruct())
+        .isEqualTo(Types.StructType.of(optional(2, "photo", Types.StructType.of())));
+  }
+
+  @Test
+  void projectSelectsAFileListElementWithoutNestedFieldsAsAnEmptyStruct() {
+    Schema schema =
+        new Schema(optional(1, "photos", Types.ListType.ofOptional(2, Types.FileType.of(2))));
+
+    Schema projected = TypeUtil.project(schema, Sets.newHashSet(2));
+
+    assertThat(projected.asStruct())
+        .isEqualTo(
+            Types.StructType.of(
+                optional(1, "photos", Types.ListType.ofOptional(2, Types.StructType.of()))));
+  }
+
+  @Test
+  void projectSelectsAFileMapValueWithoutNestedFieldsAsAnEmptyStruct() {
+    Schema schema =
+        new Schema(
+            optional(
+                1,
+                "photos",
+                Types.MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3))));
+
+    Schema projected = TypeUtil.project(schema, Sets.newHashSet(3));
+
+    assertThat(projected.asStruct())
+        .isEqualTo(
+            Types.StructType.of(
+                optional(
+                    1,
+                    "photos",
+                    Types.MapType.ofOptional(
+                        2, 3, Types.StringType.get(), Types.StructType.of()))));
+  }
+
+  @Test
+  void selectKeepsTheFileTypeForAWholeFileColumn() {
+    Schema selected = FILE_SCHEMA.select("photo");
+
+    assertThat(selected.asStruct()).isEqualTo(Types.StructType.of(optional(2, "photo", FILE)));
+  }
+
+  @Test
+  void selectDropsTheFileTypeForASingleNestedField() {
+    Schema selected = FILE_SCHEMA.select("photo.uri");
+
+    assertThat(selected.asStruct())
+        .isEqualTo(
+            Types.StructType.of(optional(2, "photo", Types.StructType.of(FILE.field("uri")))));
+  }
+
+  @Test
+  void replaceFieldTypesDropsTheFileTypeWhenANestedFieldChanges() {
+    Types.NestedField uri = FILE.field("uri");
+    List<Types.NestedField> expectedFields = Lists.newArrayList(FILE.fields());
+    expectedFields.set(
+        expectedFields.indexOf(uri),
+        Types.NestedField.from(uri).ofType(Types.BinaryType.get()).build());
+
+    Schema replaced =
+        TypeUtil.replaceFieldTypes(
+            FILE_SCHEMA, ImmutableMap.of(uri.fieldId(), Types.BinaryType.get()));
+
+    assertThat(replaced.asStruct())
+        .isEqualTo(
+            Types.StructType.of(
+                required(1, "id", Types.LongType.get()),
+                optional(2, "photo", Types.StructType.of(expectedFields))));
+  }
+
+  @Test
+  void findReturnsAFileType() {
+    assertThat(TypeUtil.find(FILE_SCHEMA, Type::isFileType)).isEqualTo(FILE);
+  }
+
+  @Test
+  void findReturnsATypeNestedInAFile() {
+    assertThat(TypeUtil.find(FILE_SCHEMA, Types.BinaryType.get()::equals))
+        .isEqualTo(Types.BinaryType.get());
+  }
+
+  @Test
+  void indexByNameOmitsTheElementSegmentForFileListElements() {
+    Types.FileType file = Types.FileType.of(2);
+    Types.StructType struct =
+        Types.StructType.of(optional(1, "photos", Types.ListType.ofOptional(2, file)));
+
+    assertThat(TypeUtil.indexByName(struct))
+        .containsEntry("photos.uri", file.field("uri").fieldId());
+  }
+
+  @Test
+  void indexByNameOmitsTheValueSegmentForFileMapValues() {
+    Types.FileType file = Types.FileType.of(3);
+    Types.StructType struct =
+        Types.StructType.of(
+            optional(1, "photos", Types.MapType.ofOptional(2, 3, Types.StringType.get(), file)));
+
+    assertThat(TypeUtil.indexByName(struct))
+        .containsEntry("photos.uri", file.field("uri").fieldId());
+  }
+
+  @Test
+  void reassignIdsAcceptsAStructMatchingTheFileFields() {
+    Schema asStruct =
+        new Schema(
+            required(11, "id", Types.LongType.get()),
+            optional(12, "photo", Types.FileType.of(12).asStruct()));
+
+    Schema reassigned = TypeUtil.reassignIds(asStruct, FILE_SCHEMA);
+
+    assertThat(reassigned.asStruct()).isEqualTo(FILE_SCHEMA.asStruct());
+  }
+
+  @Test
+  void reassignIdsAcceptsAStructMatchingTheFileFieldsInAList() {
+    Schema source =
+        new Schema(optional(1, "photos", Types.ListType.ofOptional(2, Types.FileType.of(2))));
+    Schema asStruct =
+        new Schema(
+            optional(
+                11, "photos", Types.ListType.ofOptional(12, Types.FileType.of(12).asStruct())));
+
+    Schema reassigned = TypeUtil.reassignIds(asStruct, source);
+
+    assertThat(reassigned.asStruct()).isEqualTo(source.asStruct());
+  }
+
+  @Test
+  void reassignIdsAcceptsAStructMatchingTheFileFieldsInAMap() {
+    Schema source =
+        new Schema(
+            optional(
+                1,
+                "photos",
+                Types.MapType.ofOptional(2, 3, Types.StringType.get(), Types.FileType.of(3))));
+    Schema asStruct =
+        new Schema(
+            optional(
+                11,
+                "photos",
+                Types.MapType.ofOptional(
+                    12, 13, Types.StringType.get(), Types.FileType.of(13).asStruct())));
+
+    Schema reassigned = TypeUtil.reassignIds(asStruct, source);
+
+    assertThat(reassigned.asStruct()).isEqualTo(source.asStruct());
+  }
+
+  @Test
+  void reassignIdsCaseInsensitiveAcceptsAStructMatchingTheFileFields() {
+    List<Types.NestedField> upperCaseFields = Lists.newArrayList();
+    Types.FileType.of(12)
+        .fields()
+        .forEach(
+            field ->
+                upperCaseFields.add(
+                    Types.NestedField.from(field)
+                        .withName(field.name().toUpperCase(Locale.ROOT))
+                        .build()));
+    Schema asStruct =
+        new Schema(
+            required(11, "ID", Types.LongType.get()),
+            optional(12, "PHOTO", Types.StructType.of(upperCaseFields)));
+
+    Schema reassigned = TypeUtil.reassignIds(asStruct, FILE_SCHEMA, false);
+
+    assertThat(reassigned.asStruct())
+        .isEqualTo(
+            Types.StructType.of(
+                required(1, "ID", Types.LongType.get()), optional(2, "PHOTO", FILE)));
+  }
+
+  @Test
+  void reassignIdsRejectsAStructWithTheWrongFileFieldNames() {
+    Schema wrongNames =
+        new Schema(
+            required(11, "id", Types.LongType.get()),
+            optional(
+                12,
+                "photo",
+                Types.StructType.of(
+                    optional(13, "url", Types.StringType.get()),
+                    optional(14, "offset", Types.LongType.get()),
+                    optional(15, "size", Types.LongType.get()),
+                    optional(16, "content_type", Types.StringType.get()),
+                    optional(17, "checksum", Types.StringType.get()),
+                    optional(18, "inline", Types.BinaryType.get()))));
+
+    assertThatThrownBy(() -> TypeUtil.reassignIds(wrongNames, FILE_SCHEMA))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot read a file column as a struct: expected field uri, found url");
+  }
+
+  @Test
+  void reassignIdsRejectsAStructWithTheWrongFileFieldTypes() {
+    Schema wrongTypes =
+        new Schema(
+            required(11, "id", Types.LongType.get()),
+            optional(
+                12,
+                "photo",
+                Types.StructType.of(
+                    optional(13, "uri", Types.StringType.get()),
+                    optional(14, "offset", Types.StringType.get()),
+                    optional(15, "size", Types.LongType.get()),
+                    optional(16, "content_type", Types.StringType.get()),
+                    optional(17, "checksum", Types.StringType.get()),
+                    optional(18, "inline", Types.BinaryType.get()))));
+
+    assertThatThrownBy(() -> TypeUtil.reassignIds(wrongTypes, FILE_SCHEMA))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot read a file column as a struct: field offset must be long, not string");
+  }
+
+  @Test
+  void reassignIdsRejectsAStructWithTooFewFileFields() {
+    Schema tooFew =
+        new Schema(
+            required(11, "id", Types.LongType.get()),
+            optional(
+                12, "photo", Types.StructType.of(optional(13, "uri", Types.StringType.get()))));
+
+    assertThatThrownBy(() -> TypeUtil.reassignIds(tooFew, FILE_SCHEMA))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot read a file column as a struct: expected 6 fields, found 1");
   }
 }

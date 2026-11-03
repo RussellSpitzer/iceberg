@@ -1185,6 +1185,7 @@ public class Types {
 
     // Lazy and derived from baseId
     private transient List<NestedField> fieldList = null;
+    private transient StructType struct = null;
 
     private FileType(int baseId) {
       this.baseId = baseId;
@@ -1256,7 +1257,11 @@ public class Types {
 
     /** Returns the nested fields of this type as a struct. */
     public StructType asStruct() {
-      return StructType.of(fields());
+      if (struct == null) {
+        this.struct = StructType.of(fields());
+      }
+
+      return struct;
     }
 
     @Override
