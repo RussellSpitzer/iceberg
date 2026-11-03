@@ -305,6 +305,11 @@ public class MappingUtil {
     }
 
     @Override
+    public MappedFields file(Types.FileType file, List<MappedFields> fieldResults) {
+      return struct(file.asStruct(), fieldResults);
+    }
+
+    @Override
     public MappedFields variant(Types.VariantType variant) {
       return null; // no mapping because variant has no nested fields with IDs
     }

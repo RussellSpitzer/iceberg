@@ -2668,6 +2668,23 @@ public class TestSchemaUpdate {
   }
 
   @Test
+  void unionByNameCannotAddToFileColumn() {
+    Schema newSchema =
+        new Schema(
+            required(1, "id", Types.LongType.get()),
+            optional(
+                2,
+                "photo",
+                Types.StructType.of(
+                    optional(3, "uri", Types.StringType.get()),
+                    optional(10, "extra", Types.StringType.get()))));
+
+    assertThatThrownBy(() -> fileUpdate().unionByNameWith(newSchema))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot add to non-struct column: photo: file");
+  }
+
+  @Test
   void renameFileColumn() {
     Schema renamed = fileUpdate().renameColumn("photo", "image").apply();
 

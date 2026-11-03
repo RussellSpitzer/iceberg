@@ -48,6 +48,11 @@ class TestStructProjection {
   private static final StructType DATA_STRUCT_MISSING_NESTED_FIELD =
       TypeUtil.selectNot(PROJECTED_STRUCT, Set.of(4));
 
+  private static final StructType FILE_STRUCT =
+      StructType.of(
+          NestedField.required(1, "id", Types.LongType.get()),
+          NestedField.optional(2, "photo", Types.FileType.of(2)));
+
   @Test
   void createAllowMissingAllowsMissingOptionalFieldInNestedStruct() {
     Row row = Row.of(1L, Row.of("John", "Doe"));
@@ -97,5 +102,22 @@ class TestStructProjection {
     assertThat(projection)
         .hasToString(
             "StructProjection{id=1, person=StructProjection{first=John, middle=null, last=Doe}}");
+  }
+
+  @Test
+  void projectsAWholeFileColumn() {
+    StructType projected = TypeUtil.select(FILE_STRUCT, Set.of(2));
+
+    assertThat(projected.field("photo").type()).isEqualTo(Types.FileType.of(2));
+    assertThat(StructProjection.create(FILE_STRUCT, projected).projectedFields()).isEqualTo(1);
+  }
+
+  @Test
+  void projectsASingleNestedFieldOfAFileColumn() {
+    StructType projected = TypeUtil.select(FILE_STRUCT, Set.of(3));
+
+    assertThat(projected.field("photo").type())
+        .isEqualTo(StructType.of(NestedField.optional(3, "uri", Types.StringType.get())));
+    assertThat(StructProjection.create(FILE_STRUCT, projected).projectedFields()).isEqualTo(1);
   }
 }
