@@ -79,7 +79,7 @@ public class TestSparkSchemaUtil {
 
     assertThatThrownBy(() -> SparkSchemaUtil.convert(VECTOR_SCHEMA, sparkType))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Not a list: vector(int8, 2)");
+        .hasMessage("Cannot write list<string> to vector(int8, 2) column int8_vec");
   }
 
   private static final Schema TEST_SCHEMA =

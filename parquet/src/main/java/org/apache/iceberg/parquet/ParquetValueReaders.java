@@ -204,9 +204,8 @@ public class ParquetValueReaders {
       ColumnDescriptor desc, Types.VectorType.ElementType expected) {
     Types.VectorType.ElementType fileType = ParquetVectors.elementType(desc.getPrimitiveType());
     Preconditions.checkArgument(
-        fileType == expected
-            || TypeUtil.isPromotionAllowed(
-                Types.VectorType.of(fileType, 1), Types.VectorType.of(expected, 1)),
+        TypeUtil.isPromotionAllowed(
+            Types.VectorType.of(fileType, 1), Types.VectorType.of(expected, 1)),
         "Cannot read vector elements of type %s as %s",
         fileType.typeName(),
         expected.typeName());

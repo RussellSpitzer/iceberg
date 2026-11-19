@@ -19,6 +19,7 @@
 package org.apache.iceberg.spark;
 
 import java.util.List;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
@@ -32,7 +33,10 @@ final class SparkVectorFixup {
     for (Types.NestedField field : converted.fields()) {
       Types.NestedField baseField =
           caseSensitive ? base.field(field.name()) : base.caseInsensitiveField(field.name());
-      Type fixed = baseField != null ? fixup(field.type(), baseField.type(), caseSensitive) : null;
+      Type fixed =
+          baseField != null
+              ? fixup(field.name(), field.type(), baseField.type(), caseSensitive)
+              : null;
       fields.add(
           fixed != null && fixed != field.type()
               ? Types.NestedField.from(field).ofType(fixed).build()
@@ -42,21 +46,28 @@ final class SparkVectorFixup {
     return Types.StructType.of(fields);
   }
 
-  private static Type fixup(Type converted, Type base, boolean caseSensitive) {
+  private static Type fixup(String name, Type converted, Type base, boolean caseSensitive) {
     if (base instanceof Types.VectorType vector && converted.isListType()) {
       Type element = converted.asListType().elementType();
-      return element.equals(valueType(vector.elementType())) ? vector : converted;
+      Preconditions.checkArgument(
+          element.equals(valueType(vector.elementType())),
+          "Cannot write %s to %s column %s",
+          converted,
+          vector,
+          name);
+      return vector;
     } else if (converted.isStructType() && base.isStructType()) {
       return fixup(converted.asStructType(), base.asStructType(), caseSensitive);
     } else if (converted.isListType() && base.isListType()) {
       Types.ListType list = converted.asListType();
-      Type element = fixup(list.elementType(), base.asListType().elementType(), caseSensitive);
+      Type element =
+          fixup(name, list.elementType(), base.asListType().elementType(), caseSensitive);
       return list.isElementOptional()
           ? Types.ListType.ofOptional(list.elementId(), element)
           : Types.ListType.ofRequired(list.elementId(), element);
     } else if (converted.isMapType() && base.isMapType()) {
       Types.MapType map = converted.asMapType();
-      Type value = fixup(map.valueType(), base.asMapType().valueType(), caseSensitive);
+      Type value = fixup(name, map.valueType(), base.asMapType().valueType(), caseSensitive);
       return map.isValueOptional()
           ? Types.MapType.ofOptional(map.keyId(), map.valueId(), map.keyType(), value)
           : Types.MapType.ofRequired(map.keyId(), map.valueId(), map.keyType(), value);

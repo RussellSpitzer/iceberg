@@ -117,6 +117,18 @@ class TestSparkVectors extends TestBase {
         .commit();
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void selectWithoutVectorColumns(boolean vectorized) {
+    sql("INSERT INTO %s VALUES (1, array(1Y, 2Y, 3Y), array(1F, 2F, 3F), array(1F, 2F))", TABLE);
+    setVectorization(vectorized);
+
+    assertEquals(
+        "Non-vector columns should be readable",
+        ImmutableList.of(row(1L)),
+        sql("SELECT id FROM %s", TABLE));
+  }
+
   @Test
   void sparkSchemaUsesArrays() {
     assertThat(spark.table(TABLE).schema().simpleString())

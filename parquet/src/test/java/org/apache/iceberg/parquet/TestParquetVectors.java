@@ -41,12 +41,14 @@ import org.apache.iceberg.data.parquet.InternalWriter;
 import org.apache.iceberg.inmemory.InMemoryOutputFile;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.DataWriter;
+import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.mapping.MappingUtil;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.types.Types.VectorType;
 import org.apache.iceberg.types.Types.VectorType.ElementType;
+import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetReader;
@@ -243,6 +245,53 @@ class TestParquetVectors {
     second.set(1, List.of());
 
     assertThat(read(write(schema, first, second), schema)).containsExactly(first, second);
+  }
+
+  @Test
+  void readsWithoutProjectingVectors() throws IOException {
+    VectorType vector = VectorType.of(ElementType.FLOAT16, 2);
+    Schema schema =
+        new Schema(
+            required(1, "id", Types.LongType.get()),
+            optional(2, "vec", vector),
+            optional(3, "struct", Types.StructType.of(optional(4, "nested_vec", vector))));
+    Record struct = GenericRecord.create(schema.findType("struct").asStructType());
+    struct.set(0, List.of(1.0F, 2.0F));
+    Record record = GenericRecord.create(schema);
+    record.set(0, 7L);
+    record.set(1, List.of(3.0F, 4.0F));
+    record.set(2, struct);
+
+    Schema projection = schema.select("id");
+    Record expected = GenericRecord.create(projection);
+    expected.set(0, 7L);
+    assertThat(read(write(schema, record), projection)).containsExactly(expected);
+  }
+
+  @Test
+  void float16DictionaryEncodedRoundTrip() throws IOException {
+    Schema schema = vectorSchema(ElementType.FLOAT16, 3);
+    List<Record> records = Lists.newArrayList();
+    for (int i = 0; i < 100; i += 1) {
+      records.add(record(schema, List.of((float) (i % 4), -1.5F, 0.25F * (i % 3))));
+    }
+
+    OutputFile file = new InMemoryOutputFile();
+    try (FileAppender<Record> appender =
+        Parquet.write(file)
+            .schema(schema)
+            .createWriterFunc(InternalWriter::createWriter)
+            .writerVersion(ParquetProperties.WriterVersion.PARQUET_2_0)
+            .build()) {
+      appender.addAll(records);
+    }
+
+    try (ParquetFileReader reader = ParquetFileReader.open(ParquetIO.file(file.toInputFile()))) {
+      assertThat(reader.getFooter().getBlocks().get(0).getColumns().get(0).hasDictionaryPage())
+          .isTrue();
+    }
+
+    assertThat(read(file, schema)).containsExactlyElementsOf(records);
   }
 
   @Test

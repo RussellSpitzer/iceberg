@@ -243,6 +243,10 @@ public class TypeWithSchemaVisitor<T> {
   }
 
   public T vector(Types.VectorType iVector, GroupType vector) {
+    if (iVector == null) {
+      return null;
+    }
+
     throw new UnsupportedOperationException("Not implemented for vector");
   }
 
