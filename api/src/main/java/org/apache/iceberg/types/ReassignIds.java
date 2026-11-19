@@ -113,10 +113,6 @@ class ReassignIds extends TypeUtil.CustomOrderSchemaVisitor<Type> {
 
   @Override
   public Type list(Types.ListType list, Supplier<Type> elementTypeFuture) {
-    if (sourceType.typeId() == Type.TypeID.VECTOR) {
-      return sourceType;
-    }
-
     Preconditions.checkArgument(sourceType.isListType(), "Not a list: %s", sourceType);
 
     Types.ListType sourceList = sourceType.asListType();

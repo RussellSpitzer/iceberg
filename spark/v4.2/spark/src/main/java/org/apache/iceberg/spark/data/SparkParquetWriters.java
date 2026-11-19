@@ -32,6 +32,7 @@ import java.util.stream.Stream;
 import org.apache.iceberg.FieldMetrics;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.ValueSizeFieldMetrics;
+import org.apache.iceberg.parquet.ParquetSchemaUtil;
 import org.apache.iceberg.parquet.ParquetValueReaders.ReusableEntry;
 import org.apache.iceberg.parquet.ParquetValueWriter;
 import org.apache.iceberg.parquet.ParquetValueWriters;
@@ -143,14 +144,12 @@ public class SparkParquetWriters {
 
     @Override
     public ParquetValueWriter<?> vector(ArrayType sArray, GroupType vector) {
-      GroupType repeated = vector.getFields().get(0).asGroupType();
-      String[] repeatedPath = path(repeated.getName());
+      String[] elementPath = ParquetSchemaUtil.vectorElementPath(currentPath(), vector);
+      String[] repeatedPath = Arrays.copyOf(elementPath, elementPath.length - 1);
 
       int repeatedD = type.getMaxDefinitionLevel(repeatedPath);
       int repeatedR = type.getMaxRepetitionLevel(repeatedPath);
 
-      String[] elementPath = Arrays.copyOf(repeatedPath, repeatedPath.length + 1);
-      elementPath[repeatedPath.length] = repeated.getType(0).getName();
       ColumnDescriptor elementDesc = type.getColumnDescription(elementPath);
       int dimension =
           ((FiniteVectorLogicalTypeAnnotation) vector.getLogicalTypeAnnotation()).getNumElements();
@@ -570,7 +569,11 @@ public class SparkParquetWriters {
 
     @Override
     public void write(int parentRepetition, ArrayData value) {
-      ParquetValueWriters.checkVectorSize(dimension, value.numElements());
+      Preconditions.checkArgument(
+          value.numElements() == dimension,
+          "Invalid vector: expected %s elements but got %s",
+          dimension,
+          value.numElements());
       valueCount += 1;
       super.write(parentRepetition, value);
     }

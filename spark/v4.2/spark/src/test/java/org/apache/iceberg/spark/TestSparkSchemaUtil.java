@@ -52,6 +52,36 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 public class TestSparkSchemaUtil {
+  private static final Schema VECTOR_SCHEMA =
+      new Schema(
+          optional(1, "int8_vec", Types.VectorType.of(Types.VectorType.ElementType.INT8, 2)),
+          optional(
+              2,
+              "nested",
+              Types.StructType.of(
+                  optional(
+                      3,
+                      "f16_vec",
+                      Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 4)))));
+
+  @Test
+  void convertRestoresVectorsFromArrays() {
+    StructType sparkType = SparkSchemaUtil.convert(VECTOR_SCHEMA);
+
+    assertThat(SparkSchemaUtil.convert(VECTOR_SCHEMA, sparkType).asStruct())
+        .isEqualTo(VECTOR_SCHEMA.asStruct());
+  }
+
+  @Test
+  void convertRejectsArraysWithMismatchedElementType() {
+    StructType sparkType =
+        new StructType().add("int8_vec", DataTypes.createArrayType(DataTypes.StringType, false));
+
+    assertThatThrownBy(() -> SparkSchemaUtil.convert(VECTOR_SCHEMA, sparkType))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Not a list: vector(int8, 2)");
+  }
+
   private static final Schema TEST_SCHEMA =
       new Schema(
           optional(1, "id", Types.IntegerType.get()), optional(2, "data", Types.StringType.get()));

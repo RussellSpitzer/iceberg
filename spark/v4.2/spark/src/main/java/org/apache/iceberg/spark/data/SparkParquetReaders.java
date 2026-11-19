@@ -204,14 +204,12 @@ public class SparkParquetReaders {
             expectedVector);
       }
 
-      GroupType repeated = vector.getFields().get(0).asGroupType();
-      String[] repeatedPath = path(repeated.getName());
+      String[] elementPath = ParquetSchemaUtil.vectorElementPath(currentPath(), vector);
+      String[] repeatedPath = Arrays.copyOf(elementPath, elementPath.length - 1);
 
       int repeatedD = type.getMaxDefinitionLevel(repeatedPath) - 1;
       int repeatedR = type.getMaxRepetitionLevel(repeatedPath) - 1;
 
-      String[] elementPath = Arrays.copyOf(repeatedPath, repeatedPath.length + 1);
-      elementPath[repeatedPath.length] = repeated.getType(0).getName();
       ColumnDescriptor elementDesc = type.getColumnDescription(elementPath);
 
       return new VectorReader<>(

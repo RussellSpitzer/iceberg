@@ -23,10 +23,14 @@ import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
+import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.DataFile;
+import org.apache.iceberg.Files;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.StructLike;
@@ -43,15 +47,22 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.types.Types.VectorType;
 import org.apache.iceberg.types.Types.VectorType.ElementType;
+import org.apache.parquet.example.data.Group;
 import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.ParquetReader;
+import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.LogicalTypeAnnotation.FiniteVectorLogicalTypeAnnotation;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class TestParquetVectors {
@@ -148,33 +159,180 @@ class TestParquetVectors {
         .hasMessage("Cannot read vector with dimension 2 as vector(float, 3)");
   }
 
+  @ParameterizedTest
+  @MethodSource("promotions")
+  void readPromotesElements(
+      ElementType fileType, List<?> written, ElementType readType, List<?> expected)
+      throws IOException {
+    Schema schema = vectorSchema(fileType, written.size());
+    OutputFile file = write(schema, record(schema, written));
+
+    Schema readSchema = vectorSchema(readType, written.size());
+    assertThat(read(file, readSchema)).containsExactly(record(readSchema, expected));
+  }
+
+  private static Stream<Arguments> promotions() {
+    List<Byte> int8s = List.of((byte) -128, (byte) 127);
+    List<Float> halfs = List.of(1.5F, -0.25F);
+    return Stream.of(
+        Arguments.of(ElementType.INT8, int8s, ElementType.INT, List.of(-128, 127)),
+        Arguments.of(ElementType.INT8, int8s, ElementType.LONG, List.of(-128L, 127L)),
+        Arguments.of(ElementType.INT, List.of(1, -2), ElementType.LONG, List.of(1L, -2L)),
+        Arguments.of(ElementType.FLOAT16, halfs, ElementType.FLOAT, halfs),
+        Arguments.of(ElementType.FLOAT16, halfs, ElementType.DOUBLE, List.of(1.5D, -0.25D)),
+        Arguments.of(
+            ElementType.FLOAT,
+            List.of(0.1F, 2.0F),
+            ElementType.DOUBLE,
+            List.of((double) 0.1F, 2.0D)));
+  }
+
   @Test
-  void readPromotesIntToLong() throws IOException {
+  void readRejectsDisallowedElementType() throws IOException {
+    Schema schema = vectorSchema(ElementType.FLOAT, 2);
+    OutputFile file = write(schema, record(schema, List.of(1.0F, 2.0F)));
+
+    assertThatThrownBy(() -> read(file, vectorSchema(ElementType.INT, 2)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot read vector elements of type float as int");
+  }
+
+  @Test
+  void writeRejectsNullElement() {
     Schema schema = vectorSchema(ElementType.INT, 2);
-    OutputFile file = write(schema, record(schema, Arrays.asList(1, -2)));
 
-    Schema readSchema = vectorSchema(ElementType.LONG, 2);
-    assertThat(read(file, readSchema)).containsExactly(record(readSchema, Arrays.asList(1L, -2L)));
+    assertThatThrownBy(() -> write(schema, record(schema, Arrays.asList(1, null))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Invalid vector: elements must not be null");
   }
 
   @Test
-  void readPromotesInt8ToInt() throws IOException {
-    Schema schema = vectorSchema(ElementType.INT8, 2);
-    OutputFile file = write(schema, record(schema, Arrays.asList((byte) -128, (byte) 127)));
+  void readsListWithRequiredElementsAsVector() throws IOException {
+    Schema listSchema =
+        new Schema(required(1, "vec", Types.ListType.ofRequired(2, Types.FloatType.get())));
+    OutputFile file = write(listSchema, record(listSchema, List.of(1.0F, 2.0F)));
 
-    Schema readSchema = vectorSchema(ElementType.INT, 2);
-    assertThat(read(file, readSchema))
-        .containsExactly(record(readSchema, Arrays.asList(-128, 127)));
+    Schema vectorSchema = vectorSchema(ElementType.FLOAT, 2);
+    assertThat(read(file, vectorSchema)).containsExactly(record(vectorSchema, List.of(1.0F, 2.0F)));
   }
 
   @Test
-  void readPromotesFloat16ToDouble() throws IOException {
+  void readRejectsListWithOptionalElements() throws IOException {
+    Schema listSchema =
+        new Schema(required(1, "vec", Types.ListType.ofOptional(2, Types.FloatType.get())));
+    OutputFile file = write(listSchema, record(listSchema, Arrays.asList(1.0F, null)));
+
+    assertThatThrownBy(() -> read(file, vectorSchema(ElementType.FLOAT, 2)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Invalid vector: element must be required");
+  }
+
+  @Test
+  void vectorsInStructAndListRoundTrip() throws IOException {
+    Types.VectorType vector = VectorType.of(ElementType.FLOAT16, 2);
+    Schema schema =
+        new Schema(
+            optional(1, "struct", Types.StructType.of(optional(2, "vec", vector))),
+            optional(3, "vecs", Types.ListType.ofOptional(4, vector)));
+    Record struct = GenericRecord.create(schema.findType("struct").asStructType());
+    struct.set(0, List.of(1.0F, -2.0F));
+    Record first = GenericRecord.create(schema);
+    first.set(0, struct);
+    first.set(1, Arrays.asList(List.of(0.5F, 0.25F), null, List.of(4.0F, 8.0F)));
+    Record second = GenericRecord.create(schema);
+    second.set(1, List.of());
+
+    assertThat(read(write(schema, first, second), schema)).containsExactly(first, second);
+  }
+
+  @Test
+  void float16ConversionMatchesArithmeticDecoding() {
+    for (int bits = 0; bits <= 0xFFFF; bits += 1) {
+      short half = (short) bits;
+      float expected = decodeFloat16(bits);
+      float actual = ParquetVectors.float16ToFloat(half);
+      if (Float.isNaN(expected)) {
+        assertThat(actual).as("bits 0x%04x", bits).isNaN();
+      } else {
+        assertThat(Float.floatToRawIntBits(actual))
+            .as("bits 0x%04x", bits)
+            .isEqualTo(Float.floatToRawIntBits(expected));
+        if (Float.isFinite(expected)) {
+          assertThat(ParquetVectors.floatToFloat16(expected))
+              .as("bits 0x%04x", bits)
+              .isEqualTo(half);
+        }
+      }
+    }
+  }
+
+  @Test
+  void float16ConversionRejectsValuesBetweenFloat16Values() {
+    float betweenOneAndNext = Math.nextUp(1.0F);
+    float belowSmallestSubnormal = 0x1p-25F;
+    float betweenSubnormals = 0x1.8p-24F;
+    float aboveMax = Math.nextUp(65504.0F);
+
+    for (float value :
+        new float[] {betweenOneAndNext, belowSmallestSubnormal, betweenSubnormals, aboveMax}) {
+      assertThatThrownBy(() -> ParquetVectors.floatToFloat16(value))
+          .as("value %s", value)
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("not exactly representable as float16");
+    }
+  }
+
+  @Test
+  void float16StoredAsLittleEndianBinary16(@TempDir File temp) throws IOException {
     Schema schema = vectorSchema(ElementType.FLOAT16, 2);
-    OutputFile file = write(schema, record(schema, Arrays.asList(1.5F, -0.25F)));
+    File file = new File(temp, "float16.parquet");
+    writeTo(Files.localOutput(file), schema, record(schema, List.of(1.0F, -2.0F)));
 
-    Schema readSchema = vectorSchema(ElementType.DOUBLE, 2);
-    assertThat(read(file, readSchema))
-        .containsExactly(record(readSchema, Arrays.asList(1.5D, -0.25D)));
+    List<byte[]> stored = Lists.newArrayList();
+    try (ParquetReader<Group> reader =
+        ParquetReader.builder(new GroupReadSupport(), new Path(file.toURI())).build()) {
+      Group vec = reader.read().getGroup("vec", 0);
+      for (int i = 0; i < vec.getFieldRepetitionCount("list"); i += 1) {
+        stored.add(vec.getGroup("list", i).getBinary("element", 0).getBytes());
+      }
+    }
+
+    assertThat(stored).containsExactly(new byte[] {0x00, 0x3C}, new byte[] {0x00, (byte) 0xC0});
+  }
+
+  @Test
+  void int8StoredAsAnnotatedInt32() {
+    MessageType parquetSchema =
+        ParquetSchemaUtil.convert(vectorSchema(ElementType.INT8, 4), "table");
+
+    PrimitiveType element =
+        parquetSchema
+            .getType("vec")
+            .asGroupType()
+            .getType(0)
+            .asGroupType()
+            .getType(0)
+            .asPrimitiveType();
+    assertThat(element.getPrimitiveTypeName()).isEqualTo(PrimitiveTypeName.INT32);
+    assertThat(element.getLogicalTypeAnnotation())
+        .isEqualTo(LogicalTypeAnnotation.intType(8, true));
+  }
+
+  // decodes IEEE 754 binary16 arithmetically, independently of the bit manipulation under test
+  private static float decodeFloat16(int bits) {
+    int sign = (bits >> 15) & 0x1;
+    int exponent = (bits >> 10) & 0x1F;
+    int mantissa = bits & 0x3FF;
+    float magnitude;
+    if (exponent == 0x1F) {
+      magnitude = mantissa == 0 ? Float.POSITIVE_INFINITY : Float.NaN;
+    } else if (exponent == 0) {
+      magnitude = Math.scalb((float) mantissa, -24);
+    } else {
+      magnitude = Math.scalb(1.0F + mantissa / 1024.0F, exponent - 15);
+    }
+
+    return sign == 1 ? -magnitude : magnitude;
   }
 
   @Test
@@ -265,7 +423,11 @@ class TestParquetVectors {
   }
 
   private static OutputFile write(Schema schema, Record... records) throws IOException {
-    OutputFile file = new InMemoryOutputFile();
+    return writeTo(new InMemoryOutputFile(), schema, records);
+  }
+
+  private static OutputFile writeTo(OutputFile file, Schema schema, Record... records)
+      throws IOException {
     try (DataWriter<StructLike> writer = dataWriter(schema, file)) {
       for (Record record : records) {
         writer.write(record);

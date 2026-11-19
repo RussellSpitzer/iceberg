@@ -217,7 +217,7 @@ public class ParquetTypeVisitor<T> {
   }
 
   public T vector(GroupType vector) {
-    return null;
+    throw new UnsupportedOperationException("Not implemented for vector");
   }
 
   public void beforeField(Type type) {

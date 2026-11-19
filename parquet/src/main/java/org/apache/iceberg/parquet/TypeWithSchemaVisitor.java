@@ -57,8 +57,10 @@ public class TypeWithSchemaVisitor<T> {
       // if not a primitive, the typeId must be a group
       GroupType group = type.asGroupType();
       LogicalTypeAnnotation annotation = group.getLogicalTypeAnnotation();
-      if (ParquetVectors.isVector(group) || iType instanceof Types.VectorType) {
-        return visitor.vector((Types.VectorType) iType, group);
+      if (iType instanceof Types.VectorType vector) {
+        return visitor.vector(vector, group);
+      } else if (iType == null && ParquetVectors.isVector(group)) {
+        return visitor.vector(null, group);
       } else if (annotation instanceof ListLogicalTypeAnnotation) {
         return visitList(iType, group, visitor);
       } else if (annotation instanceof MapLogicalTypeAnnotation) {
@@ -241,7 +243,7 @@ public class TypeWithSchemaVisitor<T> {
   }
 
   public T vector(Types.VectorType iVector, GroupType vector) {
-    return null;
+    throw new UnsupportedOperationException("Not implemented for vector");
   }
 
   public T variant(Types.VariantType iVariant, GroupType variant, T result) {

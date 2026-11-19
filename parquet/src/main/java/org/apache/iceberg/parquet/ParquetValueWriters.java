@@ -138,24 +138,21 @@ public class ParquetValueWriters {
   /**
    * Returns a writer for the elements of a vector column.
    *
-   * <p>The writer rejects non-finite floating-point elements and float16 elements that are not
-   * exactly representable as IEEE 754 binary16.
+   * <p>The writer rejects null elements, non-finite floating-point elements, and float16 elements
+   * that are not exactly representable as IEEE 754 binary16.
    */
-  public static ParquetValueWriter<?> vectorElements(
-      ColumnDescriptor desc, Types.VectorType.ElementType elementType) {
-    return switch (elementType) {
-      case INT8 -> new ByteWriter(desc);
-      case INT -> new UnboxedWriter<Integer>(desc);
-      case LONG -> new UnboxedWriter<Long>(desc);
-      case FLOAT16 -> new Float16Writer(desc);
-      case FLOAT -> new FiniteFloatWriter(desc);
-      case DOUBLE -> new FiniteDoubleWriter(desc);
-    };
-  }
-
-  /** Returns a writer for the elements of a vector column, using the column's element type. */
   public static ParquetValueWriter<?> vectorElements(ColumnDescriptor desc) {
-    return vectorElements(desc, ParquetVectors.elementType(desc.getPrimitiveType()));
+    ParquetValueWriter<?> writer =
+        switch (ParquetVectors.elementType(desc.getPrimitiveType())) {
+          case INT8 -> new ByteWriter(desc);
+          case INT -> new UnboxedWriter<Integer>(desc);
+          case LONG -> new UnboxedWriter<Long>(desc);
+          case FLOAT16 -> new Float16Writer(desc);
+          case FLOAT -> new FiniteFloatWriter(desc);
+          case DOUBLE -> new FiniteDoubleWriter(desc);
+        };
+
+    return new RequiredElementWriter<>(writer);
   }
 
   /**
@@ -167,16 +164,6 @@ public class ParquetValueWriters {
   public static <E> ParquetValueWriter<Collection<E>> vectors(
       int fieldId, int dimension, int dl, int rl, ParquetValueWriter<E> elementWriter) {
     return new VectorWriter<>(fieldId, dimension, dl, rl, elementWriter);
-  }
-
-  /**
-   * Validates that a vector value has the required number of elements.
-   *
-   * @throws IllegalArgumentException if the size does not match the dimension
-   */
-  public static void checkVectorSize(int dimension, int size) {
-    Preconditions.checkArgument(
-        size == dimension, "Invalid vector: expected %s elements but got %s", dimension, size);
   }
 
   public static <E> CollectionWriter<E> collections(int dl, int rl, ParquetValueWriter<E> writer) {
@@ -315,10 +302,7 @@ public class ParquetValueWriters {
 
     @Override
     public void write(int repetitionLevel, Float value) {
-      short bits = ParquetVectors.floatToFloat16(value);
-      bytes[0] = (byte) bits;
-      bytes[1] = (byte) (bits >> 8);
-      column.writeBinary(repetitionLevel, Binary.fromReusedByteArray(bytes));
+      column.writeBinary(repetitionLevel, ParquetVectors.writeFloat16(value, bytes));
     }
   }
 
@@ -692,6 +676,30 @@ public class ParquetValueWriters {
     }
   }
 
+  private static class RequiredElementWriter<E> implements ParquetValueWriter<E> {
+    private final ParquetValueWriter<E> writer;
+
+    private RequiredElementWriter(ParquetValueWriter<E> writer) {
+      this.writer = writer;
+    }
+
+    @Override
+    public void write(int repetitionLevel, E value) {
+      Preconditions.checkArgument(value != null, "Invalid vector: elements must not be null");
+      writer.write(repetitionLevel, value);
+    }
+
+    @Override
+    public List<TripleWriter<?>> columns() {
+      return writer.columns();
+    }
+
+    @Override
+    public void setColumnStore(ColumnWriteStore columnStore) {
+      writer.setColumnStore(columnStore);
+    }
+  }
+
   private static class VectorWriter<E> extends RepeatedWriter<Collection<E>, E> {
     private final int fieldId;
     private final int dimension;
@@ -710,7 +718,11 @@ public class ParquetValueWriters {
 
     @Override
     public void write(int parentRepetition, Collection<E> value) {
-      checkVectorSize(dimension, value.size());
+      Preconditions.checkArgument(
+          value.size() == dimension,
+          "Invalid vector: expected %s elements but got %s",
+          dimension,
+          value.size());
       valueCount += 1;
       super.write(parentRepetition, value);
     }

@@ -39,17 +39,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 public class TestTypeUtil {
-  @Test
-  void reassignIdsMatchesListToVector() {
-    Types.VectorType vector = Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 3);
-    Schema schema =
-        new Schema(required(0, "v", Types.ListType.ofRequired(1, Types.FloatType.get())));
-    Schema sourceSchema = new Schema(required(5, "v", vector));
-
-    Schema actualSchema = TypeUtil.reassignIds(schema, sourceSchema);
-    assertThat(actualSchema.asStruct()).isEqualTo(sourceSchema.asStruct());
-  }
-
   @ParameterizedTest
   @MethodSource("allowedVectorPromotions")
   void vectorElementPromotionAllowed(

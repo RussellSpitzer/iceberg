@@ -249,13 +249,12 @@ public class ParquetValueReaders {
           expected);
     }
 
-    String[] repeatedPath = Arrays.copyOf(vectorPath, vectorPath.length + 1);
-    repeatedPath[vectorPath.length] = vector.getType(0).getName();
+    String[] elementPath = ParquetVectors.elementPath(vectorPath, vector);
+    String[] repeatedPath = Arrays.copyOf(elementPath, elementPath.length - 1);
     int repeatedD = fileSchema.getMaxDefinitionLevel(repeatedPath) - 1;
     int repeatedR = fileSchema.getMaxRepetitionLevel(repeatedPath) - 1;
 
-    ColumnDescriptor elementDesc =
-        fileSchema.getColumnDescription(ParquetVectors.elementPath(vectorPath, vector));
+    ColumnDescriptor elementDesc = fileSchema.getColumnDescription(elementPath);
     @SuppressWarnings("unchecked")
     ParquetValueReader<Object> elementReader =
         (ParquetValueReader<Object>) vectorElements(elementDesc, expected.elementType());
@@ -768,7 +767,7 @@ public class ParquetValueReaders {
 
     @Override
     public Float read(Float ignored) {
-      return readFloat16(column.nextBinary());
+      return ParquetVectors.readFloat16(column.nextBinary());
     }
   }
 
@@ -779,13 +778,8 @@ public class ParquetValueReaders {
 
     @Override
     public Double read(Double ignored) {
-      return (double) readFloat16(column.nextBinary());
+      return (double) ParquetVectors.readFloat16(column.nextBinary());
     }
-  }
-
-  private static float readFloat16(Binary binary) {
-    byte[] bytes = binary.getBytesUnsafe();
-    return ParquetVectors.float16ToFloat((short) ((bytes[0] & 0xFF) | (bytes[1] << 8)));
   }
 
   public static class IntAsLongReader extends UnboxedReader<Long> {

@@ -20,6 +20,7 @@ package org.apache.iceberg.parquet;
 
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.types.Types.VectorType;
+import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.LogicalTypeAnnotation.FiniteVectorLogicalTypeAnnotation;
@@ -59,20 +60,27 @@ final class ParquetVectors {
         vector);
     Type repeated = vector.getType(0);
     Preconditions.checkArgument(
-        !repeated.isPrimitive() && repeated.asGroupType().getFieldCount() == 1,
-        "Invalid vector: expected a single element field: %s",
+        !repeated.isPrimitive()
+            && repeated.isRepetition(Type.Repetition.REPEATED)
+            && repeated.asGroupType().getFieldCount() == 1,
+        "Invalid vector: expected a repeated group with a single element field: %s",
         vector);
     Type element = repeated.asGroupType().getType(0);
     Preconditions.checkArgument(
         element.isPrimitive(), "Invalid vector: element must be primitive: %s", vector);
+    Preconditions.checkArgument(
+        element.isRepetition(Type.Repetition.REQUIRED),
+        "Invalid vector: element must be required: %s",
+        vector);
     return element.asPrimitiveType();
   }
 
   static String[] elementPath(String[] vectorPath, GroupType vector) {
+    PrimitiveType element = element(vector);
     String[] path = new String[vectorPath.length + 2];
     System.arraycopy(vectorPath, 0, path, 0, vectorPath.length);
     path[vectorPath.length] = vector.getType(0).getName();
-    path[vectorPath.length + 1] = element(vector).getName();
+    path[vectorPath.length + 1] = element.getName();
     return path;
   }
 
@@ -121,7 +129,10 @@ final class ParquetVectors {
 
         break;
       case INT64:
-        if (annotation == null) {
+        if (annotation == null
+            || (annotation instanceof IntLogicalTypeAnnotation intType
+                && intType.getBitWidth() == Long.SIZE
+                && intType.isSigned())) {
           return VectorType.ElementType.LONG;
         }
 
@@ -142,6 +153,19 @@ final class ParquetVectors {
     }
 
     throw new UnsupportedOperationException("Unsupported vector element type: " + element);
+  }
+
+  static float readFloat16(Binary binary) {
+    byte[] bytes = binary.getBytesUnsafe();
+    return float16ToFloat((short) ((bytes[0] & 0xFF) | (bytes[1] << 8)));
+  }
+
+  /** Encodes a float as little-endian binary16 into the given 2-byte buffer. */
+  static Binary writeFloat16(float value, byte[] buffer) {
+    short bits = floatToFloat16(value);
+    buffer[0] = (byte) bits;
+    buffer[1] = (byte) (bits >> 8);
+    return Binary.fromReusedByteArray(buffer);
   }
 
   static float float16ToFloat(short bits) {
