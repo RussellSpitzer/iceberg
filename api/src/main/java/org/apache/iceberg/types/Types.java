@@ -729,8 +729,10 @@ public class Types {
 
     /** The primitive element types a vector may hold. */
     public enum ElementType {
+      INT8("int8"),
       INT("int"),
       LONG("long"),
+      FLOAT16("float16"),
       FLOAT("float"),
       DOUBLE("double");
 

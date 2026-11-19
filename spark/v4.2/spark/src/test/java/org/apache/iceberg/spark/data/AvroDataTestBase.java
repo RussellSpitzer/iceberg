@@ -138,6 +138,12 @@ public abstract class AvroDataTestBase {
         Types.VariantType.get(),
         Types.GeometryType.crs84(),
         Types.GeographyType.crs84(),
+        Types.VectorType.of(Types.VectorType.ElementType.INT8, 16),
+        Types.VectorType.of(Types.VectorType.ElementType.INT, 4),
+        Types.VectorType.of(Types.VectorType.ElementType.LONG, 3),
+        Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 32),
+        Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 768),
+        Types.VectorType.of(Types.VectorType.ElementType.DOUBLE, 5),
       };
 
   protected boolean supportsTime() {
@@ -153,6 +159,10 @@ public abstract class AvroDataTestBase {
   }
 
   protected boolean supportsGeospatial() {
+    return false;
+  }
+
+  protected boolean supportsVector() {
     return false;
   }
 
@@ -180,6 +190,11 @@ public abstract class AvroDataTestBase {
           .as("geography is not yet implemented")
           .isTrue();
     }
+
+    assumeThat(
+            supportsVector() || TypeUtil.find(type, t -> t.typeId() == Type.TypeID.VECTOR) == null)
+        .as("vector is not yet implemented")
+        .isTrue();
 
     writeAndValidate(
         new Schema(

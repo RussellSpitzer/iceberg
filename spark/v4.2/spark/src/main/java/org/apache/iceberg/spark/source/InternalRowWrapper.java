@@ -19,6 +19,7 @@
 package org.apache.iceberg.spark.source;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
@@ -27,6 +28,7 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.BinaryType;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DecimalType;
@@ -97,6 +99,9 @@ class InternalRowWrapper implements StructLike {
           row.getDecimal(pos, decimal.precision(), decimal.scale()).toJavaBigDecimal();
     } else if (type instanceof BinaryType) {
       return (row, pos) -> ByteBuffer.wrap(row.getBinary(pos));
+    } else if (type instanceof ArrayType arrayType && icebergType.typeId() == Type.TypeID.VECTOR) {
+      DataType elementType = arrayType.elementType();
+      return (row, pos) -> Arrays.asList(row.getArray(pos).toObjectArray(elementType));
     } else if (type instanceof StructType) {
       StructType structType = (StructType) type;
       InternalRowWrapper nestedWrapper =

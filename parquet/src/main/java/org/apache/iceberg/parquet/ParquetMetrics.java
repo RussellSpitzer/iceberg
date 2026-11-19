@@ -228,6 +228,24 @@ class ParquetMetrics {
     }
 
     @Override
+    public Iterable<FieldMetrics<?>> vector(Types.VectorType iVector, GroupType vector) {
+      Type.ID id = vector.getId();
+      if (null == id) {
+        return ImmutableList.of();
+      }
+
+      int fieldId = id.intValue();
+      MetricsModes.MetricsMode mode = MetricsUtil.metricsMode(schema, metricsConfig, fieldId);
+      FieldMetrics<?> metrics = metricsById.get(fieldId);
+      if (mode == MetricsModes.None.get() || metrics == null) {
+        return ImmutableList.of();
+      }
+
+      return ImmutableList.of(
+          new FieldMetrics<>(fieldId, metrics.valueCount(), metrics.nullValueCount()));
+    }
+
+    @Override
     public Iterable<FieldMetrics<?>> map(
         Types.MapType iMap,
         GroupType map,

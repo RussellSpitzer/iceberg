@@ -56,6 +56,7 @@ import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.LogicalTypeAnnotation.DecimalLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.FiniteVectorLogicalTypeAnnotation;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
@@ -137,6 +138,29 @@ public class SparkParquetWriters {
           repeatedD,
           repeatedR,
           newOption(repeated.getType(0), elementWriter),
+          sArray.elementType());
+    }
+
+    @Override
+    public ParquetValueWriter<?> vector(ArrayType sArray, GroupType vector) {
+      GroupType repeated = vector.getFields().get(0).asGroupType();
+      String[] repeatedPath = path(repeated.getName());
+
+      int repeatedD = type.getMaxDefinitionLevel(repeatedPath);
+      int repeatedR = type.getMaxRepetitionLevel(repeatedPath);
+
+      String[] elementPath = Arrays.copyOf(repeatedPath, repeatedPath.length + 1);
+      elementPath[repeatedPath.length] = repeated.getType(0).getName();
+      ColumnDescriptor elementDesc = type.getColumnDescription(elementPath);
+      int dimension =
+          ((FiniteVectorLogicalTypeAnnotation) vector.getLogicalTypeAnnotation()).getNumElements();
+
+      return new ArrayDataVectorWriter<>(
+          vector.getId().intValue(),
+          dimension,
+          repeatedD,
+          repeatedR,
+          ParquetValueWriters.vectorElements(elementDesc),
           sArray.elementType());
     }
 
@@ -524,6 +548,36 @@ public class SparkParquetWriters {
   private static class GeographyWriter extends GeospatialWriter {
     private GeographyWriter(ColumnDescriptor desc) {
       super(desc);
+    }
+  }
+
+  private static class ArrayDataVectorWriter<E> extends ArrayDataWriter<E> {
+    private final int fieldId;
+    private final int dimension;
+    private long valueCount = 0L;
+
+    private ArrayDataVectorWriter(
+        int fieldId,
+        int dimension,
+        int definitionLevel,
+        int repetitionLevel,
+        ParquetValueWriter<E> writer,
+        DataType elementType) {
+      super(definitionLevel, repetitionLevel, writer, elementType);
+      this.fieldId = fieldId;
+      this.dimension = dimension;
+    }
+
+    @Override
+    public void write(int parentRepetition, ArrayData value) {
+      ParquetValueWriters.checkVectorSize(dimension, value.numElements());
+      valueCount += 1;
+      super.write(parentRepetition, value);
+    }
+
+    @Override
+    public Stream<FieldMetrics<?>> metrics() {
+      return Stream.of(new FieldMetrics<>(fieldId, valueCount, 0L));
     }
   }
 

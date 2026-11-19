@@ -130,6 +130,7 @@ public class DataTestHelpers {
       case DECIMAL:
       case GEOMETRY:
       case GEOGRAPHY:
+      case VECTOR:
         assertThat(actual)
             .as("Primitive value should be equal to expected for type " + type)
             .isEqualTo(expected);

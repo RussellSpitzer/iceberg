@@ -165,6 +165,9 @@ public class RandomUtil {
         return wkbPoint(
             (random.nextDouble() * 360.0) - 180.0, (random.nextDouble() * 180.0) - 90.0);
 
+      case VECTOR:
+        return generateVector((Types.VectorType) primitive, random);
+
       default:
         throw new IllegalArgumentException(
             "Cannot generate random value for unknown type: " + primitive);
@@ -214,10 +217,59 @@ public class RandomUtil {
       case GEOGRAPHY:
         // a small set of distinct points so the WKB column stays dictionary encodable
         return wkbPoint(value, value);
+      case VECTOR:
+        Types.VectorType vector = (Types.VectorType) primitive;
+        List<Object> elements = Lists.newArrayListWithExpectedSize(vector.dimension());
+        for (int i = 0; i < vector.dimension(); i += 1) {
+          elements.add(vectorElement(vector.elementType(), negate(value) ? -value : value));
+        }
+
+        return elements;
       default:
         throw new IllegalArgumentException(
             "Cannot generate random value for unknown type: " + primitive);
     }
+  }
+
+  private static List<Object> generateVector(Types.VectorType vector, Random random) {
+    List<Object> elements = Lists.newArrayListWithExpectedSize(vector.dimension());
+    for (int i = 0; i < vector.dimension(); i += 1) {
+      elements.add(randomVectorElement(vector.elementType(), random));
+    }
+
+    return elements;
+  }
+
+  private static Object randomVectorElement(Types.VectorType.ElementType type, Random random) {
+    return switch (type) {
+      case INT8 -> (byte) random.nextInt();
+      case INT -> random.nextInt();
+      case LONG -> random.nextLong();
+      case FLOAT16 -> randomFloat16(random);
+      case FLOAT -> (random.nextFloat() - 0.5F) * Float.MAX_VALUE;
+      case DOUBLE -> (random.nextDouble() - 0.5D) * Double.MAX_VALUE;
+    };
+  }
+
+  private static Object vectorElement(Types.VectorType.ElementType type, int value) {
+    return switch (type) {
+      case INT8 -> (byte) value;
+      case INT -> value;
+      case LONG -> (long) value;
+      case FLOAT16, FLOAT -> (float) value;
+      case DOUBLE -> (double) value;
+    };
+  }
+
+  /** Returns a random finite value that is exactly representable as IEEE 754 binary16. */
+  private static float randomFloat16(Random random) {
+    int exponent = random.nextInt(31); // 31 is reserved for infinity and NaN
+    int mantissa = random.nextInt(1024);
+    float magnitude =
+        exponent == 0
+            ? Math.scalb((float) mantissa, -24)
+            : Math.scalb(1.0F + mantissa / 1024.0F, exponent - 15);
+    return random.nextBoolean() ? -magnitude : magnitude;
   }
 
   /** Encodes a point as little-endian WKB, the on-disk representation for geo values. */

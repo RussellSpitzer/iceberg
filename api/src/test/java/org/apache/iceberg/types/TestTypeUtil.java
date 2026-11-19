@@ -40,6 +40,59 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 public class TestTypeUtil {
   @Test
+  void reassignIdsMatchesListToVector() {
+    Types.VectorType vector = Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 3);
+    Schema schema =
+        new Schema(required(0, "v", Types.ListType.ofRequired(1, Types.FloatType.get())));
+    Schema sourceSchema = new Schema(required(5, "v", vector));
+
+    Schema actualSchema = TypeUtil.reassignIds(schema, sourceSchema);
+    assertThat(actualSchema.asStruct()).isEqualTo(sourceSchema.asStruct());
+  }
+
+  @ParameterizedTest
+  @MethodSource("allowedVectorPromotions")
+  void vectorElementPromotionAllowed(
+      Types.VectorType.ElementType from, Types.VectorType.ElementType to) {
+    assertThat(
+            TypeUtil.isPromotionAllowed(Types.VectorType.of(from, 4), Types.VectorType.of(to, 4)))
+        .isTrue();
+  }
+
+  private static Stream<Arguments> allowedVectorPromotions() {
+    return Stream.of(
+        Arguments.of(Types.VectorType.ElementType.INT8, Types.VectorType.ElementType.INT),
+        Arguments.of(Types.VectorType.ElementType.INT8, Types.VectorType.ElementType.LONG),
+        Arguments.of(Types.VectorType.ElementType.INT, Types.VectorType.ElementType.LONG),
+        Arguments.of(Types.VectorType.ElementType.FLOAT16, Types.VectorType.ElementType.FLOAT),
+        Arguments.of(Types.VectorType.ElementType.FLOAT16, Types.VectorType.ElementType.DOUBLE),
+        Arguments.of(Types.VectorType.ElementType.FLOAT, Types.VectorType.ElementType.DOUBLE));
+  }
+
+  @Test
+  void vectorDimensionChangeNotAllowed() {
+    assertThat(
+            TypeUtil.isPromotionAllowed(
+                Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 4),
+                Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 8)))
+        .isFalse();
+  }
+
+  @Test
+  void vectorElementNarrowingNotAllowed() {
+    assertThat(
+            TypeUtil.isPromotionAllowed(
+                Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 4),
+                Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 4)))
+        .isFalse();
+    assertThat(
+            TypeUtil.isPromotionAllowed(
+                Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 4),
+                Types.VectorType.of(Types.VectorType.ElementType.INT, 4)))
+        .isFalse();
+  }
+
+  @Test
   public void testReassignIdsDuplicateColumns() {
     Schema schema =
         new Schema(

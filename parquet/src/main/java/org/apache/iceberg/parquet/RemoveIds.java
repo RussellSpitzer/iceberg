@@ -78,6 +78,14 @@ public class RemoveIds extends ParquetTypeVisitor<Type> {
   }
 
   @Override
+  public Type vector(GroupType vector) {
+    return Types.buildGroup(vector.getRepetition())
+        .as(vector.getLogicalTypeAnnotation())
+        .addFields(vector.getFields().toArray(new Type[0]))
+        .named(vector.getName());
+  }
+
+  @Override
   public Type variant(GroupType variant) {
     Types.GroupBuilder<GroupType> builder =
         Types.buildGroup(variant.getRepetition()).as(variant.getLogicalTypeAnnotation());

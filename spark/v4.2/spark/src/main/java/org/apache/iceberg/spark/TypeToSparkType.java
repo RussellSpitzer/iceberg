@@ -27,9 +27,11 @@ import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.catalyst.expressions.Literal$;
+import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.ArrayType$;
 import org.apache.spark.sql.types.BinaryType$;
 import org.apache.spark.sql.types.BooleanType$;
+import org.apache.spark.sql.types.ByteType$;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DateType$;
 import org.apache.spark.sql.types.DecimalType$;
@@ -162,10 +164,26 @@ class TypeToSparkType extends TypeUtil.SchemaVisitor<DataType> {
         return DecimalType$.MODULE$.apply(decimal.precision(), decimal.scale());
       case UNKNOWN:
         return NullType$.MODULE$;
+      case VECTOR:
+        return vectorType((Types.VectorType) primitive);
       default:
         throw new UnsupportedOperationException(
             "Cannot convert unsupported type to Spark: " + primitive);
     }
+  }
+
+  static ArrayType vectorType(Types.VectorType vector) {
+    return ArrayType$.MODULE$.apply(vectorElementType(vector.elementType()), false);
+  }
+
+  static DataType vectorElementType(Types.VectorType.ElementType elementType) {
+    return switch (elementType) {
+      case INT8 -> ByteType$.MODULE$;
+      case INT -> IntegerType$.MODULE$;
+      case LONG -> LongType$.MODULE$;
+      case FLOAT16, FLOAT -> FloatType$.MODULE$;
+      case DOUBLE -> DoubleType$.MODULE$;
+    };
   }
 
   private DataType geometryType(Types.GeometryType geometry) {

@@ -76,6 +76,11 @@ public class TestGenericData extends DataTestBase {
   }
 
   @Override
+  protected boolean supportsVector() {
+    return true;
+  }
+
+  @Override
   protected void writeAndValidate(Schema schema) throws IOException {
     writeAndValidate(schema, schema);
   }

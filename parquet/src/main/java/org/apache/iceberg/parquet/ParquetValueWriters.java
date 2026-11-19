@@ -135,6 +135,50 @@ public class ParquetValueWriters {
     return new FixedBufferWriter(desc);
   }
 
+  /**
+   * Returns a writer for the elements of a vector column.
+   *
+   * <p>The writer rejects non-finite floating-point elements and float16 elements that are not
+   * exactly representable as IEEE 754 binary16.
+   */
+  public static ParquetValueWriter<?> vectorElements(
+      ColumnDescriptor desc, Types.VectorType.ElementType elementType) {
+    return switch (elementType) {
+      case INT8 -> new ByteWriter(desc);
+      case INT -> new UnboxedWriter<Integer>(desc);
+      case LONG -> new UnboxedWriter<Long>(desc);
+      case FLOAT16 -> new Float16Writer(desc);
+      case FLOAT -> new FiniteFloatWriter(desc);
+      case DOUBLE -> new FiniteDoubleWriter(desc);
+    };
+  }
+
+  /** Returns a writer for the elements of a vector column, using the column's element type. */
+  public static ParquetValueWriter<?> vectorElements(ColumnDescriptor desc) {
+    return vectorElements(desc, ParquetVectors.elementType(desc.getPrimitiveType()));
+  }
+
+  /**
+   * Returns a writer for vector values that are passed as a collection of elements.
+   *
+   * @param fieldId the vector field ID used to report metrics
+   * @param dimension the required number of elements in each vector
+   */
+  public static <E> ParquetValueWriter<Collection<E>> vectors(
+      int fieldId, int dimension, int dl, int rl, ParquetValueWriter<E> elementWriter) {
+    return new VectorWriter<>(fieldId, dimension, dl, rl, elementWriter);
+  }
+
+  /**
+   * Validates that a vector value has the required number of elements.
+   *
+   * @throws IllegalArgumentException if the size does not match the dimension
+   */
+  public static void checkVectorSize(int dimension, int size) {
+    Preconditions.checkArgument(
+        size == dimension, "Invalid vector: expected %s elements but got %s", dimension, size);
+  }
+
   public static <E> CollectionWriter<E> collections(int dl, int rl, ParquetValueWriter<E> writer) {
     return new CollectionWriter<>(dl, rl, writer);
   }
@@ -233,6 +277,48 @@ public class ParquetValueWriters {
     @Override
     public Stream<FieldMetrics<?>> metrics() {
       return Stream.of(doubleFieldMetricsBuilder.build());
+    }
+  }
+
+  private static class FiniteFloatWriter extends UnboxedWriter<Float> {
+    private FiniteFloatWriter(ColumnDescriptor desc) {
+      super(desc);
+    }
+
+    @Override
+    public void write(int repetitionLevel, Float value) {
+      Preconditions.checkArgument(
+          Float.isFinite(value), "Invalid float vector element: %s (must be finite)", value);
+      writeFloat(repetitionLevel, value);
+    }
+  }
+
+  private static class FiniteDoubleWriter extends UnboxedWriter<Double> {
+    private FiniteDoubleWriter(ColumnDescriptor desc) {
+      super(desc);
+    }
+
+    @Override
+    public void write(int repetitionLevel, Double value) {
+      Preconditions.checkArgument(
+          Double.isFinite(value), "Invalid double vector element: %s (must be finite)", value);
+      writeDouble(repetitionLevel, value);
+    }
+  }
+
+  private static class Float16Writer extends PrimitiveWriter<Float> {
+    private final byte[] bytes = new byte[2];
+
+    private Float16Writer(ColumnDescriptor desc) {
+      super(desc);
+    }
+
+    @Override
+    public void write(int repetitionLevel, Float value) {
+      short bits = ParquetVectors.floatToFloat16(value);
+      bytes[0] = (byte) bits;
+      bytes[1] = (byte) (bits >> 8);
+      column.writeBinary(repetitionLevel, Binary.fromReusedByteArray(bytes));
     }
   }
 
@@ -603,6 +689,40 @@ public class ParquetValueWriters {
     @Override
     protected Iterator<E> elements(Collection<E> list) {
       return list.iterator();
+    }
+  }
+
+  private static class VectorWriter<E> extends RepeatedWriter<Collection<E>, E> {
+    private final int fieldId;
+    private final int dimension;
+    private long valueCount = 0L;
+
+    private VectorWriter(
+        int fieldId,
+        int dimension,
+        int definitionLevel,
+        int repetitionLevel,
+        ParquetValueWriter<E> writer) {
+      super(definitionLevel, repetitionLevel, writer);
+      this.fieldId = fieldId;
+      this.dimension = dimension;
+    }
+
+    @Override
+    public void write(int parentRepetition, Collection<E> value) {
+      checkVectorSize(dimension, value.size());
+      valueCount += 1;
+      super.write(parentRepetition, value);
+    }
+
+    @Override
+    protected Iterator<E> elements(Collection<E> vector) {
+      return vector.iterator();
+    }
+
+    @Override
+    public Stream<FieldMetrics<?>> metrics() {
+      return Stream.of(new FieldMetrics<>(fieldId, valueCount, 0L));
     }
   }
 

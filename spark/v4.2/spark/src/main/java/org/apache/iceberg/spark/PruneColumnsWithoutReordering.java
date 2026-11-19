@@ -254,6 +254,15 @@ public class PruneColumnsWithoutReordering extends TypeUtil.CustomOrderSchemaVis
             requestedGeography.algorithm(),
             tableAlgorithm);
         break;
+      case VECTOR:
+        Types.VectorType vector = (Types.VectorType) primitive;
+        DataType requestedElement = ((ArrayType) current).elementType();
+        Preconditions.checkArgument(
+            requestedElement.equals(TypeToSparkType.vectorElementType(vector.elementType())),
+            "Cannot project %s to incompatible type: %s",
+            vector,
+            current);
+        break;
       default:
     }
 
@@ -277,5 +286,6 @@ public class PruneColumnsWithoutReordering extends TypeUtil.CustomOrderSchemaVis
           .put(TypeID.GEOMETRY, ImmutableSet.of(GeometryType.class))
           .put(TypeID.GEOGRAPHY, ImmutableSet.of(GeographyType.class))
           .put(TypeID.UNKNOWN, ImmutableSet.of(NullType$.class))
+          .put(TypeID.VECTOR, ImmutableSet.of(ArrayType.class))
           .buildOrThrow();
 }

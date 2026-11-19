@@ -129,6 +129,11 @@ public class TestSparkParquetReader extends AvroDataTestBase {
     return true;
   }
 
+  @Override
+  protected boolean supportsVector() {
+    return true;
+  }
+
   @Test
   public void geospatialReaderBuildsSparkPhysicalValues() throws IOException {
     Schema schema =

@@ -41,6 +41,7 @@ import org.apache.iceberg.parquet.ParquetVariantReaders.DelegatingValueReader;
 import org.apache.iceberg.parquet.ParquetVariantVisitor;
 import org.apache.iceberg.parquet.TypeWithSchemaVisitor;
 import org.apache.iceberg.parquet.VariantReaderBuilder;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
@@ -51,10 +52,12 @@ import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.UUIDUtil;
 import org.apache.iceberg.variants.Variant;
 import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.LogicalTypeAnnotation.DecimalLogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.FiniteVectorLogicalTypeAnnotation;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
@@ -184,6 +187,38 @@ public class SparkParquetReaders {
 
       return new ArrayReader<>(
           repeatedD, repeatedR, ParquetValueReaders.option(elementType, elementD, elementReader));
+    }
+
+    @Override
+    public ParquetValueReader<?> vector(Types.VectorType expectedVector, GroupType vector) {
+      if (expectedVector == null) {
+        return null;
+      }
+
+      if (vector.getLogicalTypeAnnotation()
+          instanceof FiniteVectorLogicalTypeAnnotation fileVector) {
+        Preconditions.checkArgument(
+            fileVector.getNumElements() == expectedVector.dimension(),
+            "Cannot read vector with dimension %s as %s",
+            fileVector.getNumElements(),
+            expectedVector);
+      }
+
+      GroupType repeated = vector.getFields().get(0).asGroupType();
+      String[] repeatedPath = path(repeated.getName());
+
+      int repeatedD = type.getMaxDefinitionLevel(repeatedPath) - 1;
+      int repeatedR = type.getMaxRepetitionLevel(repeatedPath) - 1;
+
+      String[] elementPath = Arrays.copyOf(repeatedPath, repeatedPath.length + 1);
+      elementPath[repeatedPath.length] = repeated.getType(0).getName();
+      ColumnDescriptor elementDesc = type.getColumnDescription(elementPath);
+
+      return new VectorReader<>(
+          expectedVector.dimension(),
+          repeatedD,
+          repeatedR,
+          ParquetValueReaders.vectorElements(elementDesc, expectedVector.elementType()));
     }
 
     @Override
@@ -488,6 +523,29 @@ public class SparkParquetReaders {
     protected ArrayData buildList(ReusableArrayData list) {
       list.setNumElements(writePos);
       return list;
+    }
+  }
+
+  private static class VectorReader<E> extends ArrayReader<E> {
+    private final int dimension;
+
+    VectorReader(
+        int dimension, int definitionLevel, int repetitionLevel, ParquetValueReader<E> reader) {
+      super(definitionLevel, repetitionLevel, reader);
+      this.dimension = dimension;
+    }
+
+    @Override
+    protected ArrayData buildList(ReusableArrayData list) {
+      ArrayData vector = super.buildList(list);
+      if (vector.numElements() != dimension) {
+        throw new ParquetDecodingException(
+            String.format(
+                "Invalid vector: expected %s elements but read %s",
+                dimension, vector.numElements()));
+      }
+
+      return vector;
     }
   }
 

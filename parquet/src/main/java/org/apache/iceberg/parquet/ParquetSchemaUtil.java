@@ -320,6 +320,11 @@ public class ParquetSchemaUtil {
     public Boolean variant(GroupType variant) {
       return variant.getId() != null;
     }
+
+    @Override
+    public Boolean vector(GroupType vector) {
+      return vector.getId() != null;
+    }
   }
 
   public static Type determineListElementType(GroupType array) {

@@ -134,6 +134,10 @@ public abstract class DataTestBase {
         Types.GeographyType.of("srid:4269", EdgeAlgorithm.KARNEY),
         Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 768),
         Types.VectorType.of(Types.VectorType.ElementType.INT, 4),
+        Types.VectorType.of(Types.VectorType.ElementType.INT8, 16),
+        Types.VectorType.of(Types.VectorType.ElementType.LONG, 3),
+        Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 32),
+        Types.VectorType.of(Types.VectorType.ElementType.DOUBLE, 5),
       };
 
   protected boolean supportsUnknown() {

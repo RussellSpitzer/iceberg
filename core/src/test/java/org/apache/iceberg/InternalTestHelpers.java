@@ -93,6 +93,7 @@ public class InternalTestHelpers {
       case DECIMAL:
       case GEOMETRY:
       case GEOGRAPHY:
+      case VECTOR:
         assertThat(actual).as("Primitive value should be equal to expected").isEqualTo(expected);
         break;
       case STRUCT:

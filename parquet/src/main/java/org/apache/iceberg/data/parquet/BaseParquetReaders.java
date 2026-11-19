@@ -292,6 +292,15 @@ abstract class BaseParquetReaders<T> {
     }
 
     @Override
+    public ParquetValueReader<?> vector(Types.VectorType expectedVector, GroupType vector) {
+      if (expectedVector == null) {
+        return null;
+      }
+
+      return ParquetValueReaders.vectors(type, currentPath(), expectedVector);
+    }
+
+    @Override
     public ParquetValueReader<?> map(
         Types.MapType expectedMap,
         GroupType map,

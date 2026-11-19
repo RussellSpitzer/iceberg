@@ -369,6 +369,8 @@ public class RandomData {
         case GEOGRAPHY:
           GeographyType geographyType = (GeographyType) SparkSchemaUtil.convert(primitive);
           return STUtils.stGeogFromWKB((byte[]) obj, geographyType.srid());
+        case VECTOR:
+          return new GenericArrayData(((List<?>) obj).toArray());
         default:
           return obj;
       }

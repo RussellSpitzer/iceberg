@@ -67,6 +67,10 @@ public class TestTypes {
         .isEqualTo(Types.VectorType.of(Types.VectorType.ElementType.INT, 768));
     assertThat(Types.fromTypeName("Vector(Float, 3)"))
         .isEqualTo(Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 3));
+    assertThat(Types.fromTypeName("vector(int8, 16)"))
+        .isEqualTo(Types.VectorType.of(Types.VectorType.ElementType.INT8, 16));
+    assertThat(Types.fromTypeName("vector(Float16, 32)"))
+        .isEqualTo(Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 32));
     assertThat(Types.fromTypeName("vector( double , 1536 )"))
         .isEqualTo(Types.VectorType.of(Types.VectorType.ElementType.DOUBLE, 1536));
 

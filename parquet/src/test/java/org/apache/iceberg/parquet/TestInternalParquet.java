@@ -62,6 +62,11 @@ public class TestInternalParquet extends DataTestBase {
   }
 
   @Override
+  protected boolean supportsVector() {
+    return true;
+  }
+
+  @Override
   protected void writeAndValidate(Schema schema) throws IOException {
     List<Record> expected = RandomInternalData.generate(schema, 100, 1376L);
     writeAndValidate(schema, expected);

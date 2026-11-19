@@ -26,6 +26,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.variants.Variant;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
+import org.apache.parquet.schema.LogicalTypeAnnotation.FiniteVectorLogicalTypeAnnotation;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
@@ -63,7 +64,11 @@ public class ParquetWithSparkSchemaVisitor<T> {
       // if not a primitive, the typeId must be a group
       GroupType group = type.asGroupType();
       LogicalTypeAnnotation annotation = group.getLogicalTypeAnnotation();
-      if (LogicalTypeAnnotation.listType().equals(annotation)) {
+      if (annotation instanceof FiniteVectorLogicalTypeAnnotation) {
+        Preconditions.checkArgument(
+            sType instanceof ArrayType, "Invalid vector: %s is not an array", sType);
+        return visitor.vector((ArrayType) sType, group);
+      } else if (LogicalTypeAnnotation.listType().equals(annotation)) {
         Preconditions.checkArgument(
             !group.isRepetition(Repetition.REPEATED),
             "Invalid list: top-level group is repeated: %s",
@@ -221,6 +226,10 @@ public class ParquetWithSparkSchemaVisitor<T> {
   }
 
   public T list(ArrayType sArray, GroupType array, T element) {
+    return null;
+  }
+
+  public T vector(ArrayType sArray, GroupType vector) {
     return null;
   }
 

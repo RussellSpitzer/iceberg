@@ -34,6 +34,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
@@ -44,6 +45,7 @@ import org.apache.iceberg.MetadataColumns;
 import org.apache.iceberg.data.GenericDataUtil;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.spark.SparkSchemaUtil;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.variants.Variant;
@@ -55,6 +57,8 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.catalyst.util.MapData;
 import org.apache.spark.sql.catalyst.util.STUtils;
+import org.apache.spark.sql.types.ArrayType;
+import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.Geography;
 import org.apache.spark.sql.types.Geometry;
@@ -217,6 +221,13 @@ public class GenericsHelpers {
         assertThat(expected).as("Should expect a Record").isInstanceOf(Record.class);
         assertThat(actual).as("Should be a Row").isInstanceOf(Row.class);
         assertEqualsSafe(type.asNestedType().asStructType(), (Record) expected, (Row) actual);
+        break;
+      case VECTOR:
+        assertThat(expected).as("Should expect a List").isInstanceOf(List.class);
+        assertThat(actual).as("Should be a Seq").isInstanceOf(Seq.class);
+        assertThat(seqAsJavaListConverter((Seq<?>) actual).asJava())
+            .as("Vector should match")
+            .isEqualTo(expected);
         break;
       case LIST:
         assertThat(expected).as("Should expect a Collection").isInstanceOf(Collection.class);
@@ -432,6 +443,14 @@ public class GenericsHelpers {
         assertThat(actual).as("Should be an InternalRow").isInstanceOf(InternalRow.class);
         assertEqualsUnsafe(
             type.asNestedType().asStructType(), (Record) expected, (InternalRow) actual);
+        break;
+      case VECTOR:
+        assertThat(expected).as("Should expect a List").isInstanceOf(List.class);
+        assertThat(actual).as("Should be an ArrayData").isInstanceOf(ArrayData.class);
+        DataType vectorElementType = ((ArrayType) SparkSchemaUtil.convert(type)).elementType();
+        assertThat(Arrays.asList(((ArrayData) actual).toObjectArray(vectorElementType)))
+            .as("Vector should match")
+            .isEqualTo(expected);
         break;
       case LIST:
         assertThat(expected).as("Should expect a Collection").isInstanceOf(Collection.class);

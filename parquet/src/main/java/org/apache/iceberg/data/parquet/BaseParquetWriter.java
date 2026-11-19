@@ -105,6 +105,26 @@ abstract class BaseParquetWriter<T> {
     }
 
     @Override
+    public ParquetValueWriter<?> vector(Types.VectorType iceberg, GroupType vector) {
+      GroupType repeated = vector.getType(0).asGroupType();
+      String[] repeatedPath = path(repeated.getName());
+
+      int repeatedD = type.getMaxDefinitionLevel(repeatedPath);
+      int repeatedR = type.getMaxRepetitionLevel(repeatedPath);
+
+      String[] elementPath = Arrays.copyOf(repeatedPath, repeatedPath.length + 1);
+      elementPath[repeatedPath.length] = repeated.getType(0).getName();
+      ColumnDescriptor elementDesc = type.getColumnDescription(elementPath);
+
+      return ParquetValueWriters.vectors(
+          vector.getId().intValue(),
+          iceberg.dimension(),
+          repeatedD,
+          repeatedR,
+          ParquetValueWriters.vectorElements(elementDesc, iceberg.elementType()));
+    }
+
+    @Override
     public ParquetValueWriter<?> map(
         Types.MapType iceberg,
         GroupType map,

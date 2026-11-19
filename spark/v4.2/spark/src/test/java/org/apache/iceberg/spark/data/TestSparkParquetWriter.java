@@ -24,6 +24,7 @@ import static org.apache.iceberg.TableProperties.PARQUET_BLOOM_FILTER_COLUMN_NDV
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -60,6 +61,7 @@ import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.schema.MessageType;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
+import org.apache.spark.sql.catalyst.util.GenericArrayData;
 import org.apache.spark.sql.catalyst.util.STUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -147,6 +149,66 @@ public class TestSparkParquetWriter {
       }
       assertThat(rows).as("Should not have extra rows").isExhausted();
     }
+  }
+
+  private static final Schema VECTOR_SCHEMA =
+      new Schema(
+          required(1, "int8_vec", Types.VectorType.of(Types.VectorType.ElementType.INT8, 8)),
+          optional(2, "int_vec", Types.VectorType.of(Types.VectorType.ElementType.INT, 3)),
+          optional(3, "long_vec", Types.VectorType.of(Types.VectorType.ElementType.LONG, 2)),
+          optional(4, "f16_vec", Types.VectorType.of(Types.VectorType.ElementType.FLOAT16, 16)),
+          optional(5, "float_vec", Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 4)),
+          optional(6, "double_vec", Types.VectorType.of(Types.VectorType.ElementType.DOUBLE, 2)));
+
+  @Test
+  void vectorRoundTrip() throws IOException {
+    int numRows = 1_000;
+    Iterable<InternalRow> records = RandomData.generateSpark(VECTOR_SCHEMA, numRows, 4321L);
+    File testFile = writeSpark(VECTOR_SCHEMA, records);
+
+    try (CloseableIterable<InternalRow> reader =
+        Parquet.read(Files.localInput(testFile))
+            .project(VECTOR_SCHEMA)
+            .createReaderFunc(type -> SparkParquetReaders.buildReader(VECTOR_SCHEMA, type))
+            .build()) {
+      Iterator<InternalRow> expected = records.iterator();
+      Iterator<InternalRow> rows = reader.iterator();
+      for (int i = 0; i < numRows; i += 1) {
+        assertThat(rows).as("Should have expected number of rows").hasNext();
+        TestHelpers.assertEquals(VECTOR_SCHEMA, expected.next(), rows.next());
+      }
+
+      assertThat(rows).as("Should not have extra rows").isExhausted();
+    }
+  }
+
+  @Test
+  void vectorWriterRejectsWrongDimension() {
+    Schema schema =
+        new Schema(required(1, "vec", Types.VectorType.of(Types.VectorType.ElementType.FLOAT, 3)));
+    InternalRow row =
+        new GenericInternalRow(new Object[] {new GenericArrayData(new Object[] {1.0F})});
+
+    assertThatThrownBy(() -> writeSpark(schema, List.of(row)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Invalid vector: expected 3 elements but got 1");
+  }
+
+  private File writeSpark(Schema schema, Iterable<InternalRow> rows) throws IOException {
+    File testFile = File.createTempFile("junit", null, temp.toFile());
+    assertThat(testFile.delete()).as("Delete should succeed").isTrue();
+
+    try (FileAppender<InternalRow> writer =
+        Parquet.write(Files.localOutput(testFile))
+            .schema(schema)
+            .createWriterFunc(
+                msgType ->
+                    SparkParquetWriters.buildWriter(SparkSchemaUtil.convert(schema), msgType))
+            .build()) {
+      writer.addAll(rows);
+    }
+
+    return testFile;
   }
 
   @Test

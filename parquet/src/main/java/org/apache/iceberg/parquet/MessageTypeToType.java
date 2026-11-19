@@ -186,6 +186,13 @@ class MessageTypeToType extends ParquetTypeVisitor<Type> {
     return Types.VariantType.get();
   }
 
+  @Override
+  public Type vector(GroupType vector) {
+    return Types.VectorType.of(
+        ParquetVectors.elementType(ParquetVectors.element(vector)),
+        ParquetVectors.dimension(vector));
+  }
+
   private static class ParquetLogicalTypeVisitor
       implements LogicalTypeAnnotation.LogicalTypeAnnotationVisitor<Type> {
     private static final ParquetLogicalTypeVisitor INSTANCE = new ParquetLogicalTypeVisitor();

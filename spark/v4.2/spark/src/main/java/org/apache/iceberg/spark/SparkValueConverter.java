@@ -58,6 +58,9 @@ public class SparkValueConverter {
         }
         return convertedList;
 
+      case VECTOR:
+        return Lists.newArrayList((List<?>) object);
+
       case MAP:
         Map<Object, Object> convertedMap = Maps.newLinkedHashMap();
         Map<?, ?> map = (Map<?, ?>) object;
@@ -109,6 +112,9 @@ public class SparkValueConverter {
           break;
         case LIST:
           record.set(i, convert(fieldType.asListType(), row.getList(i)));
+          break;
+        case VECTOR:
+          record.set(i, convert(fieldType, row.getList(i)));
           break;
         case MAP:
           record.set(i, convert(fieldType.asMapType(), row.getJavaMap(i)));

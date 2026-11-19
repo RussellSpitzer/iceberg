@@ -45,11 +45,14 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.UUIDUtil;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.PageReadStore;
+import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
+import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.LogicalTypeAnnotation.DecimalLogicalTypeAnnotation;
 import org.apache.parquet.schema.LogicalTypeAnnotation.TimeLogicalTypeAnnotation;
@@ -189,6 +192,75 @@ public class ParquetValueReaders {
     } else {
       return ParquetValueReaders.nulls();
     }
+  }
+
+  /**
+   * Returns a reader for the elements of a vector column that produces values of the expected
+   * element type, promoting from the file's element type when allowed.
+   *
+   * @throws IllegalArgumentException if the file element type cannot be read as the expected type
+   */
+  public static ParquetValueReader<?> vectorElements(
+      ColumnDescriptor desc, Types.VectorType.ElementType expected) {
+    Types.VectorType.ElementType fileType = ParquetVectors.elementType(desc.getPrimitiveType());
+    Preconditions.checkArgument(
+        fileType == expected
+            || TypeUtil.isPromotionAllowed(
+                Types.VectorType.of(fileType, 1), Types.VectorType.of(expected, 1)),
+        "Cannot read vector elements of type %s as %s",
+        fileType.typeName(),
+        expected.typeName());
+
+    return switch (expected) {
+      case INT8 -> new IntAsByteReader(desc);
+      case INT -> new UnboxedReader<Integer>(desc);
+      case LONG ->
+          fileType == Types.VectorType.ElementType.LONG
+              ? new UnboxedReader<Long>(desc)
+              : new IntAsLongReader(desc);
+      case FLOAT16 -> new Float16Reader(desc);
+      case FLOAT ->
+          fileType == Types.VectorType.ElementType.FLOAT16
+              ? new Float16Reader(desc)
+              : new UnboxedReader<Float>(desc);
+      case DOUBLE ->
+          switch (fileType) {
+            case FLOAT16 -> new Float16AsDoubleReader(desc);
+            case FLOAT -> new FloatAsDoubleReader(desc);
+            default -> new UnboxedReader<Double>(desc);
+          };
+    };
+  }
+
+  /**
+   * Returns a reader for a vector column at the given path in the file schema.
+   *
+   * @throws IllegalArgumentException if the file's vector dimension does not match the expected
+   *     dimension or its elements cannot be read as the expected element type
+   */
+  public static ParquetValueReader<List<Object>> vectors(
+      MessageType fileSchema, String[] vectorPath, Types.VectorType expected) {
+    GroupType vector = fileSchema.getType(vectorPath).asGroupType();
+    if (ParquetVectors.isVector(vector)) {
+      Preconditions.checkArgument(
+          ParquetVectors.dimension(vector) == expected.dimension(),
+          "Cannot read vector with dimension %s as %s",
+          ParquetVectors.dimension(vector),
+          expected);
+    }
+
+    String[] repeatedPath = Arrays.copyOf(vectorPath, vectorPath.length + 1);
+    repeatedPath[vectorPath.length] = vector.getType(0).getName();
+    int repeatedD = fileSchema.getMaxDefinitionLevel(repeatedPath) - 1;
+    int repeatedR = fileSchema.getMaxRepetitionLevel(repeatedPath) - 1;
+
+    ColumnDescriptor elementDesc =
+        fileSchema.getColumnDescription(ParquetVectors.elementPath(vectorPath, vector));
+    @SuppressWarnings("unchecked")
+    ParquetValueReader<Object> elementReader =
+        (ParquetValueReader<Object>) vectorElements(elementDesc, expected.elementType());
+
+    return new VectorReader<>(expected.dimension(), repeatedD, repeatedR, elementReader);
   }
 
   public static ParquetValueReader<UUID> uuids(ColumnDescriptor desc) {
@@ -689,6 +761,33 @@ public class ParquetValueReaders {
     }
   }
 
+  private static class Float16Reader extends PrimitiveReader<Float> {
+    private Float16Reader(ColumnDescriptor desc) {
+      super(desc);
+    }
+
+    @Override
+    public Float read(Float ignored) {
+      return readFloat16(column.nextBinary());
+    }
+  }
+
+  private static class Float16AsDoubleReader extends PrimitiveReader<Double> {
+    private Float16AsDoubleReader(ColumnDescriptor desc) {
+      super(desc);
+    }
+
+    @Override
+    public Double read(Double ignored) {
+      return (double) readFloat16(column.nextBinary());
+    }
+  }
+
+  private static float readFloat16(Binary binary) {
+    byte[] bytes = binary.getBytesUnsafe();
+    return ParquetVectors.float16ToFloat((short) ((bytes[0] & 0xFF) | (bytes[1] << 8)));
+  }
+
   public static class IntAsLongReader extends UnboxedReader<Long> {
     public IntAsLongReader(ColumnDescriptor desc) {
       super(desc);
@@ -1017,6 +1116,27 @@ public class ParquetValueReaders {
 
     @Override
     protected List<E> buildList(List<E> list) {
+      return list;
+    }
+  }
+
+  private static class VectorReader<E> extends ListReader<E> {
+    private final int dimension;
+
+    private VectorReader(
+        int dimension, int definitionLevel, int repetitionLevel, ParquetValueReader<E> reader) {
+      super(definitionLevel, repetitionLevel, reader);
+      this.dimension = dimension;
+    }
+
+    @Override
+    protected List<E> buildList(List<E> list) {
+      if (list.size() != dimension) {
+        throw new ParquetDecodingException(
+            String.format(
+                "Invalid vector: expected %s elements but read %s", dimension, list.size()));
+      }
+
       return list;
     }
   }
