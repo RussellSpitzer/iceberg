@@ -255,7 +255,7 @@ public class PruneColumnsWithoutReordering extends TypeUtil.CustomOrderSchemaVis
             tableAlgorithm);
         break;
       case VECTOR:
-        Types.VectorType vector = (Types.VectorType) primitive;
+        Types.VectorType vector = primitive.asVectorType();
         DataType requestedElement = ((ArrayType) current).elementType();
         Preconditions.checkArgument(
             requestedElement.equals(TypeToSparkType.vectorElementType(vector.elementType())),

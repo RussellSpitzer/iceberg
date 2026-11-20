@@ -235,7 +235,7 @@ class StructInternalRow extends InternalRow {
   }
 
   private ArrayData getArrayInternal(int ordinal) {
-    if (type.fields().get(ordinal).type().typeId() == Type.TypeID.VECTOR) {
+    if (type.fields().get(ordinal).type().isVectorType()) {
       return new GenericArrayData(struct.get(ordinal, List.class).toArray());
     }
 

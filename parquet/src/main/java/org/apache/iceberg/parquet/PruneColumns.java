@@ -176,9 +176,7 @@ class PruneColumns extends TypeWithSchemaVisitor<Type> {
   }
 
   private boolean isStruct(Type field, NestedField expected) {
-    if (field.isPrimitive()
-        || expected.type().isVariantType()
-        || expected.type() instanceof VectorType) {
+    if (field.isPrimitive() || expected.type().isVariantType() || expected.type().isVectorType()) {
       return false;
     } else {
       GroupType groupType = field.asGroupType();

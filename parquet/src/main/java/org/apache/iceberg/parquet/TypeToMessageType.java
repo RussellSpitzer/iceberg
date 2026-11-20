@@ -45,7 +45,6 @@ import org.apache.iceberg.types.Types.NestedField;
 import org.apache.iceberg.types.Types.StructType;
 import org.apache.iceberg.types.Types.TimestampNanoType;
 import org.apache.iceberg.types.Types.TimestampType;
-import org.apache.iceberg.types.Types.VectorType;
 import org.apache.iceberg.variants.Variant;
 import org.apache.parquet.column.schema.EdgeInterpolationAlgorithm;
 import org.apache.parquet.schema.GroupType;
@@ -121,9 +120,9 @@ public class TypeToMessageType {
     if (field.type().typeId() == TypeID.UNKNOWN) {
       return null;
 
-    } else if (field.type().typeId() == TypeID.VECTOR) {
+    } else if (field.type().isVectorType()) {
       return ParquetVectors.toParquet(
-          (VectorType) field.type(), repetition, id, AvroSchemaUtil.makeCompatibleName(name));
+          field.type().asVectorType(), repetition, id, AvroSchemaUtil.makeCompatibleName(name));
 
     } else if (field.type().isPrimitiveType()) {
       return primitive(field.type().asPrimitiveType(), repetition, id, name);

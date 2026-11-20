@@ -788,6 +788,16 @@ public class Types {
     }
 
     @Override
+    public boolean isVectorType() {
+      return true;
+    }
+
+    @Override
+    public VectorType asVectorType() {
+      return this;
+    }
+
+    @Override
     public String toString() {
       return String.format(Locale.ROOT, "%s(%s, %d)", NAME, elementType.typeName(), dimension);
     }

@@ -57,8 +57,8 @@ public class TypeWithSchemaVisitor<T> {
       // if not a primitive, the typeId must be a group
       GroupType group = type.asGroupType();
       LogicalTypeAnnotation annotation = group.getLogicalTypeAnnotation();
-      if (iType instanceof Types.VectorType vector) {
-        return visitor.vector(vector, group);
+      if (iType != null && iType.isVectorType()) {
+        return visitor.vector(iType.asVectorType(), group);
       } else if (iType == null && ParquetVectors.isVector(group)) {
         return visitor.vector(null, group);
       } else if (annotation instanceof ListLogicalTypeAnnotation) {
