@@ -37,11 +37,6 @@ final class ParquetVectors {
 
   private static final int FLOAT16_LENGTH = 2;
   private static final int INT8_BIT_WIDTH = 8;
-  private static final int FLOAT_EXPONENT_BIAS = 127;
-  private static final int FLOAT16_EXPONENT_BIAS = 15;
-  private static final int FLOAT_MANTISSA_BITS = 23;
-  private static final int FLOAT16_MANTISSA_BITS = 10;
-  private static final int FLOAT16_MAX_EXPONENT = 0x1F;
 
   private ParquetVectors() {}
 
@@ -160,24 +155,7 @@ final class ParquetVectors {
   }
 
   static float float16ToFloat(short bits) {
-    int sign = (bits & 0x8000) << 16;
-    int exponent = (bits >>> FLOAT16_MANTISSA_BITS) & FLOAT16_MAX_EXPONENT;
-    int mantissa = bits & 0x3FF;
-
-    if (exponent == FLOAT16_MAX_EXPONENT) {
-      // infinity or NaN
-      return Float.intBitsToFloat(sign | 0x7F800000 | (mantissa << 13));
-    } else if (exponent == 0) {
-      // zero or subnormal: mantissa * 2^-24
-      float magnitude = mantissa * 0x1p-24f;
-      return sign == 0 ? magnitude : -magnitude;
-    }
-
-    int floatExponent = exponent - FLOAT16_EXPONENT_BIAS + FLOAT_EXPONENT_BIAS;
-    return Float.intBitsToFloat(
-        sign
-            | (floatExponent << FLOAT_MANTISSA_BITS)
-            | (mantissa << (FLOAT_MANTISSA_BITS - FLOAT16_MANTISSA_BITS)));
+    return Float16Conversions.toFloat(bits);
   }
 
   /**
@@ -189,31 +167,10 @@ final class ParquetVectors {
     Preconditions.checkArgument(
         Float.isFinite(value), "Invalid float16 vector element: %s (must be finite)", value);
 
-    int bits = Float.floatToRawIntBits(value);
-    int sign = (bits >>> 16) & 0x8000;
-    int exponent = ((bits >>> FLOAT_MANTISSA_BITS) & 0xFF) - FLOAT_EXPONENT_BIAS;
-    int mantissa = bits & 0x7FFFFF;
-
-    short result;
-    if (value == 0.0f) {
-      result = (short) sign;
-    } else if (exponent >= -14) {
-      // normal binary16 range; values that overflow fail the round-trip check below
-      int halfExponent = Math.min(exponent + FLOAT16_EXPONENT_BIAS, FLOAT16_MAX_EXPONENT);
-      result =
-          (short)
-              (sign
-                  | (halfExponent << FLOAT16_MANTISSA_BITS)
-                  | (mantissa >>> (FLOAT_MANTISSA_BITS - FLOAT16_MANTISSA_BITS)));
-    } else {
-      // subnormal binary16: value = m * 2^-24
-      float scaled = Math.abs(value) * 0x1p24f;
-      int halfMantissa = (int) scaled;
-      result = (short) (sign | (halfMantissa & 0x3FF));
-    }
-
+    short result = Float16Conversions.toFloat16(value);
     Preconditions.checkArgument(
-        Float.floatToRawIntBits(float16ToFloat(result)) == bits,
+        Float.floatToRawIntBits(Float16Conversions.toFloat(result))
+            == Float.floatToRawIntBits(value),
         "Invalid float16 vector element: %s (not exactly representable as float16)",
         value);
 
