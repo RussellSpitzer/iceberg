@@ -79,7 +79,17 @@ public class TestSparkSchemaUtil {
 
     assertThatThrownBy(() -> SparkSchemaUtil.convert(VECTOR_SCHEMA, sparkType))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Cannot write list<string> to vector(int8, 2) column int8_vec");
+        .hasMessage("Cannot write array<string> to vector(int8, 2) column int8_vec");
+  }
+
+  @Test
+  void convertRejectsIntArrayForInt8Vector() {
+    StructType sparkType =
+        new StructType().add("int8_vec", DataTypes.createArrayType(DataTypes.IntegerType, false));
+
+    assertThatThrownBy(() -> SparkSchemaUtil.convert(VECTOR_SCHEMA, sparkType))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cannot write array<int> to vector(int8, 2) column int8_vec");
   }
 
   private static final Schema TEST_SCHEMA =

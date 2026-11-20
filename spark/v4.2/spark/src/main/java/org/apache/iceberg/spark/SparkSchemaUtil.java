@@ -181,8 +181,9 @@ public class SparkSchemaUtil {
   public static Schema convert(Schema baseSchema, StructType sparkType, boolean caseSensitive) {
     // convert to a type with fresh ids
     Types.StructType struct =
-        SparkVectorFixup.fixup(
+        SparkVectorElementFixup.fixup(
             SparkTypeVisitor.visit(sparkType, new SparkTypeToType(sparkType)).asStructType(),
+            sparkType,
             baseSchema.asStruct(),
             caseSensitive);
     // reassign ids to match the base schema
@@ -209,8 +210,9 @@ public class SparkSchemaUtil {
       Schema baseSchema, StructType sparkType, boolean caseSensitive) {
     // convert to a type with fresh ids
     Types.StructType struct =
-        SparkVectorFixup.fixup(
+        SparkVectorElementFixup.fixup(
             SparkTypeVisitor.visit(sparkType, new SparkTypeToType(sparkType)).asStructType(),
+            sparkType,
             baseSchema.asStruct(),
             caseSensitive);
     // reassign ids to match the base schema
