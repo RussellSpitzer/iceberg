@@ -45,7 +45,6 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
-import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.UUIDUtil;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -195,17 +194,15 @@ public class ParquetValueReaders {
   }
 
   /**
-   * Returns a reader for the elements of a vector column that produces values of the expected
-   * element type, promoting from the file's element type when allowed.
+   * Returns a reader for the elements of a vector column.
    *
-   * @throws IllegalArgumentException if the file element type cannot be read as the expected type
+   * @throws IllegalArgumentException if the file's element type does not match the expected type
    */
   public static ParquetValueReader<?> vectorElements(
       ColumnDescriptor desc, Types.VectorType.ElementType expected) {
     Types.VectorType.ElementType fileType = ParquetVectors.elementType(desc.getPrimitiveType());
     Preconditions.checkArgument(
-        TypeUtil.isPromotionAllowed(
-            Types.VectorType.of(fileType, 1), Types.VectorType.of(expected, 1)),
+        fileType == expected,
         "Cannot read vector elements of type %s as %s",
         fileType.typeName(),
         expected.typeName());
@@ -213,29 +210,18 @@ public class ParquetValueReaders {
     return switch (expected) {
       case INT8 -> new IntAsByteReader(desc);
       case INT -> new UnboxedReader<Integer>(desc);
-      case LONG ->
-          fileType == Types.VectorType.ElementType.LONG
-              ? new UnboxedReader<Long>(desc)
-              : new IntAsLongReader(desc);
+      case LONG -> new UnboxedReader<Long>(desc);
       case FLOAT16 -> new Float16Reader(desc);
-      case FLOAT ->
-          fileType == Types.VectorType.ElementType.FLOAT16
-              ? new Float16Reader(desc)
-              : new UnboxedReader<Float>(desc);
-      case DOUBLE ->
-          switch (fileType) {
-            case FLOAT16 -> new Float16AsDoubleReader(desc);
-            case FLOAT -> new FloatAsDoubleReader(desc);
-            default -> new UnboxedReader<Double>(desc);
-          };
+      case FLOAT -> new UnboxedReader<Float>(desc);
+      case DOUBLE -> new UnboxedReader<Double>(desc);
     };
   }
 
   /**
    * Returns a reader for a vector column at the given path in the file schema.
    *
-   * @throws IllegalArgumentException if the file's vector dimension does not match the expected
-   *     dimension or its elements cannot be read as the expected element type
+   * @throws IllegalArgumentException if the file's vector dimension or element type does not match
+   *     the expected vector type
    */
   public static ParquetValueReader<List<Object>> vectors(
       MessageType fileSchema, String[] vectorPath, Types.VectorType expected) {
@@ -767,17 +753,6 @@ public class ParquetValueReaders {
     @Override
     public Float read(Float ignored) {
       return ParquetVectors.readFloat16(column.nextBinary());
-    }
-  }
-
-  private static class Float16AsDoubleReader extends PrimitiveReader<Double> {
-    private Float16AsDoubleReader(ColumnDescriptor desc) {
-      super(desc);
-    }
-
-    @Override
-    public Double read(Double ignored) {
-      return (double) ParquetVectors.readFloat16(column.nextBinary());
     }
   }
 

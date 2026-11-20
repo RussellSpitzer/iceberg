@@ -491,32 +491,9 @@ public class TypeUtil {
         Types.DecimalType toDecimal = (Types.DecimalType) to;
         return fromDecimal.scale() == toDecimal.scale()
             && fromDecimal.precision() <= toDecimal.precision();
-
-      case VECTOR:
-        if (to.typeId() != Type.TypeID.VECTOR) {
-          return false;
-        }
-
-        Types.VectorType fromVector = (Types.VectorType) from;
-        Types.VectorType toVector = (Types.VectorType) to;
-        return fromVector.dimension() == toVector.dimension()
-            && isVectorElementPromotionAllowed(fromVector.elementType(), toVector.elementType());
     }
 
     return false;
-  }
-
-  private static boolean isVectorElementPromotionAllowed(
-      Types.VectorType.ElementType from, Types.VectorType.ElementType to) {
-    return switch (from) {
-      case INT8 ->
-          to == Types.VectorType.ElementType.INT || to == Types.VectorType.ElementType.LONG;
-      case INT -> to == Types.VectorType.ElementType.LONG;
-      case FLOAT16 ->
-          to == Types.VectorType.ElementType.FLOAT || to == Types.VectorType.ElementType.DOUBLE;
-      case FLOAT -> to == Types.VectorType.ElementType.DOUBLE;
-      case LONG, DOUBLE -> false;
-    };
   }
 
   /**

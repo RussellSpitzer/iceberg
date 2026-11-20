@@ -27,7 +27,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Stream;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.Files;
@@ -63,8 +62,6 @@ import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class TestParquetVectors {
@@ -161,36 +158,8 @@ class TestParquetVectors {
         .hasMessage("Cannot read vector with dimension 2 as vector(float, 3)");
   }
 
-  @ParameterizedTest
-  @MethodSource("promotions")
-  void readPromotesElements(
-      ElementType fileType, List<?> written, ElementType readType, List<?> expected)
-      throws IOException {
-    Schema schema = vectorSchema(fileType, written.size());
-    OutputFile file = write(schema, record(schema, written));
-
-    Schema readSchema = vectorSchema(readType, written.size());
-    assertThat(read(file, readSchema)).containsExactly(record(readSchema, expected));
-  }
-
-  private static Stream<Arguments> promotions() {
-    List<Byte> int8s = List.of((byte) -128, (byte) 127);
-    List<Float> halfs = List.of(1.5F, -0.25F);
-    return Stream.of(
-        Arguments.of(ElementType.INT8, int8s, ElementType.INT, List.of(-128, 127)),
-        Arguments.of(ElementType.INT8, int8s, ElementType.LONG, List.of(-128L, 127L)),
-        Arguments.of(ElementType.INT, List.of(1, -2), ElementType.LONG, List.of(1L, -2L)),
-        Arguments.of(ElementType.FLOAT16, halfs, ElementType.FLOAT, halfs),
-        Arguments.of(ElementType.FLOAT16, halfs, ElementType.DOUBLE, List.of(1.5D, -0.25D)),
-        Arguments.of(
-            ElementType.FLOAT,
-            List.of(0.1F, 2.0F),
-            ElementType.DOUBLE,
-            List.of((double) 0.1F, 2.0D)));
-  }
-
   @Test
-  void readRejectsDisallowedElementType() throws IOException {
+  void readRejectsDifferentElementType() throws IOException {
     Schema schema = vectorSchema(ElementType.FLOAT, 2);
     OutputFile file = write(schema, record(schema, List.of(1.0F, 2.0F)));
 
