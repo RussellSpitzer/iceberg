@@ -59,6 +59,7 @@ import org.apache.parquet.schema.LogicalTypeAnnotation.FiniteVectorLogicalTypeAn
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
+import org.apache.parquet.schema.Type;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -138,12 +139,29 @@ class TestParquetVectors {
   }
 
   @Test
-  void readRejectsWrongElementCount() throws IOException {
-    Schema listSchema =
-        new Schema(required(1, "vec", Types.ListType.ofRequired(2, Types.FloatType.get())));
-    OutputFile file = write(listSchema, record(listSchema, Arrays.asList(1.0F, 2.0F)));
+  void vectorReaderRejectsWrongElementCount() {
+    ParquetValueReader<List<Integer>> twoElements =
+        new ParquetValueReader<>() {
+          @Override
+          public List<Integer> read(List<Integer> reuse) {
+            return List.of(1, 2);
+          }
 
-    assertThatThrownBy(() -> read(file, vectorSchema(ElementType.FLOAT, 3)))
+          @Override
+          public TripleIterator<?> column() {
+            return null;
+          }
+
+          @Override
+          public List<TripleIterator<?>> columns() {
+            return List.of();
+          }
+        };
+
+    ParquetValueReader<List<Integer>> reader =
+        ParquetValueReaders.vectors(3, List::size, twoElements);
+
+    assertThatThrownBy(() -> reader.read(null))
         .isInstanceOf(ParquetDecodingException.class)
         .hasMessage("Invalid vector: expected 3 elements but read 2");
   }
@@ -178,22 +196,28 @@ class TestParquetVectors {
   }
 
   @Test
-  void readsListWithRequiredElementsAsVector() throws IOException {
+  void readRejectsListWithoutVectorAnnotation() throws IOException {
     Schema listSchema =
         new Schema(required(1, "vec", Types.ListType.ofRequired(2, Types.FloatType.get())));
     OutputFile file = write(listSchema, record(listSchema, List.of(1.0F, 2.0F)));
 
-    Schema vectorSchema = vectorSchema(ElementType.FLOAT, 2);
-    assertThat(read(file, vectorSchema)).containsExactly(record(vectorSchema, List.of(1.0F, 2.0F)));
+    assertThatThrownBy(() -> read(file, vectorSchema(ElementType.FLOAT, 2)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageEndingWith("as vector(float, 2): not annotated as FINITE_VECTOR");
   }
 
   @Test
-  void readRejectsListWithOptionalElements() throws IOException {
-    Schema listSchema =
-        new Schema(required(1, "vec", Types.ListType.ofOptional(2, Types.FloatType.get())));
-    OutputFile file = write(listSchema, record(listSchema, Arrays.asList(1.0F, null)));
+  void readRejectsVectorWithOptionalElements() {
+    Schema schema = vectorSchema(ElementType.FLOAT, 2);
+    GroupType vector = ParquetSchemaUtil.convert(schema, "table").getType("vec").asGroupType();
+    GroupType repeated = vector.getType(0).asGroupType();
+    PrimitiveType optionalElement =
+        new PrimitiveType(Type.Repetition.OPTIONAL, PrimitiveTypeName.FLOAT, "element");
+    MessageType fileSchema =
+        new MessageType("table", vector.withNewFields(repeated.withNewFields(optionalElement)));
 
-    assertThatThrownBy(() -> read(file, vectorSchema(ElementType.FLOAT, 2)))
+    assertThatThrownBy(
+            () -> ParquetSchemaUtil.pruneColumns(fileSchema, vectorSchema(ElementType.FLOAT, 2)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith("Invalid vector: element must be required");
   }
@@ -401,7 +425,7 @@ class TestParquetVectors {
   }
 
   @Test
-  void writerReportsVectorValueAndNullCounts() throws IOException {
+  void writerReportsVectorMetrics() throws IOException {
     Schema schema = new Schema(optional(1, "vec", VectorType.of(ElementType.FLOAT16, 2)));
     OutputFile outputFile = new InMemoryOutputFile();
     DataWriter<StructLike> writer = dataWriter(schema, outputFile);
@@ -414,6 +438,7 @@ class TestParquetVectors {
     DataFile dataFile = writer.toDataFile();
     assertThat(dataFile.valueCounts()).containsEntry(1, 3L);
     assertThat(dataFile.nullValueCounts()).containsEntry(1, 1L);
+    assertThat(dataFile.columnSizes()).containsKey(1);
     assertThat(dataFile.lowerBounds())
         .satisfiesAnyOf(
             bounds -> assertThat(bounds).isNull(),

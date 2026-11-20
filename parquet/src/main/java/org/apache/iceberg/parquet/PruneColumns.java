@@ -24,6 +24,7 @@ import java.util.Set;
 import org.apache.iceberg.relocated.com.google.common.base.Objects;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
+import org.apache.iceberg.types.Type.TypeID;
 import org.apache.iceberg.types.Types.ListType;
 import org.apache.iceberg.types.Types.MapType;
 import org.apache.iceberg.types.Types.NestedField;
@@ -176,7 +177,9 @@ class PruneColumns extends TypeWithSchemaVisitor<Type> {
   }
 
   private boolean isStruct(Type field, NestedField expected) {
-    if (field.isPrimitive() || expected.type().isVariantType() || expected.type().isVectorType()) {
+    if (field.isPrimitive()
+        || expected.type().isVariantType()
+        || expected.type().typeId() == TypeID.VECTOR) {
       return false;
     } else {
       GroupType groupType = field.asGroupType();

@@ -200,7 +200,7 @@ class SparkBatch implements Batch {
       return false;
     }
 
-    if (type.isVectorType()) {
+    if (type.typeId() == Type.TypeID.VECTOR) {
       return false;
     }
 

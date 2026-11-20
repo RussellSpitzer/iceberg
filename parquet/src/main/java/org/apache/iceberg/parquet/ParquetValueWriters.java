@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -156,14 +157,12 @@ public class ParquetValueWriters {
   }
 
   /**
-   * Returns a writer for vector values that are passed as a collection of elements.
-   *
-   * @param fieldId the vector field ID used to report metrics
-   * @param dimension the required number of elements in each vector
+   * Wraps a list writer so that it rejects values that do not have exactly {@code dimension}
+   * elements.
    */
-  public static <E> ParquetValueWriter<Collection<E>> vectors(
-      int fieldId, int dimension, int dl, int rl, ParquetValueWriter<E> elementWriter) {
-    return new VectorWriter<>(fieldId, dimension, dl, rl, elementWriter);
+  public static <L> ParquetValueWriter<L> vectors(
+      int dimension, ToIntFunction<L> size, ParquetValueWriter<L> listWriter) {
+    return new VectorWriter<>(dimension, size, listWriter);
   }
 
   public static <E> CollectionWriter<E> collections(int dl, int rl, ParquetValueWriter<E> writer) {
@@ -700,41 +699,36 @@ public class ParquetValueWriters {
     }
   }
 
-  private static class VectorWriter<E> extends RepeatedWriter<Collection<E>, E> {
-    private final int fieldId;
+  private static class VectorWriter<L> implements ParquetValueWriter<L> {
     private final int dimension;
-    private long valueCount = 0L;
+    private final ToIntFunction<L> size;
+    private final ParquetValueWriter<L> writer;
 
-    private VectorWriter(
-        int fieldId,
-        int dimension,
-        int definitionLevel,
-        int repetitionLevel,
-        ParquetValueWriter<E> writer) {
-      super(definitionLevel, repetitionLevel, writer);
-      this.fieldId = fieldId;
+    private VectorWriter(int dimension, ToIntFunction<L> size, ParquetValueWriter<L> writer) {
       this.dimension = dimension;
+      this.size = size;
+      this.writer = writer;
     }
 
     @Override
-    public void write(int parentRepetition, Collection<E> value) {
+    public void write(int repetitionLevel, L value) {
+      int numElements = size.applyAsInt(value);
       Preconditions.checkArgument(
-          value.size() == dimension,
+          numElements == dimension,
           "Invalid vector: expected %s elements but got %s",
           dimension,
-          value.size());
-      valueCount += 1;
-      super.write(parentRepetition, value);
+          numElements);
+      writer.write(repetitionLevel, value);
     }
 
     @Override
-    protected Iterator<E> elements(Collection<E> vector) {
-      return vector.iterator();
+    public List<TripleWriter<?>> columns() {
+      return writer.columns();
     }
 
     @Override
-    public Stream<FieldMetrics<?>> metrics() {
-      return Stream.of(new FieldMetrics<>(fieldId, valueCount, 0L));
+    public void setColumnStore(ColumnWriteStore columnStore) {
+      writer.setColumnStore(columnStore);
     }
   }
 

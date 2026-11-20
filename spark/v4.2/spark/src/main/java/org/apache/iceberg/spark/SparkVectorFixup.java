@@ -47,8 +47,8 @@ final class SparkVectorFixup {
   }
 
   private static Type fixup(String name, Type converted, Type base, boolean caseSensitive) {
-    if (base.isVectorType() && converted.isListType()) {
-      Types.VectorType vector = base.asVectorType();
+    if (base.typeId() == Type.TypeID.VECTOR && converted.isListType()) {
+      Types.VectorType vector = (Types.VectorType) base;
       Type element = converted.asListType().elementType();
       Preconditions.checkArgument(
           element.equals(valueType(vector.elementType())),

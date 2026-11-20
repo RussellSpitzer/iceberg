@@ -332,19 +332,6 @@ public class ParquetSchemaUtil {
     }
   }
 
-  /**
-   * Returns the path of the element column of a vector group.
-   *
-   * @param vectorPath the path of the vector group
-   * @param vector the vector group
-   * @return the path of the vector's element column
-   * @throws IllegalArgumentException if the group is not a 3-level list with a required primitive
-   *     element
-   */
-  public static String[] vectorElementPath(String[] vectorPath, GroupType vector) {
-    return ParquetVectors.elementPath(vectorPath, vector);
-  }
-
   public static Type determineListElementType(GroupType array) {
     Type repeated = array.getFields().get(0);
     boolean isOldListElementType = isOldListElementType(array);

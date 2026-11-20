@@ -166,7 +166,7 @@ public class RandomUtil {
             (random.nextDouble() * 360.0) - 180.0, (random.nextDouble() * 180.0) - 90.0);
 
       case VECTOR:
-        return generateVector(primitive.asVectorType(), random);
+        return generateVector((Types.VectorType) primitive, random);
 
       default:
         throw new IllegalArgumentException(
@@ -218,7 +218,7 @@ public class RandomUtil {
         // a small set of distinct points so the WKB column stays dictionary encodable
         return wkbPoint(value, value);
       case VECTOR:
-        Types.VectorType vector = primitive.asVectorType();
+        Types.VectorType vector = (Types.VectorType) primitive;
         List<Object> elements = Lists.newArrayListWithExpectedSize(vector.dimension());
         for (int i = 0; i < vector.dimension(); i += 1) {
           elements.add(vectorElement(vector.elementType(), negate(value) ? -value : value));

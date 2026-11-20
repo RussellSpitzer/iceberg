@@ -238,8 +238,6 @@ public class TestTypes {
 
     assertThat(vector.typeId()).isEqualTo(Type.TypeID.VECTOR);
     assertThat(vector.isPrimitiveType()).isTrue();
-    assertThat(vector.isVectorType()).isTrue();
-    assertThat(vector.asVectorType()).isSameAs(vector);
     assertThat(vector.elementType()).isEqualTo(Types.VectorType.ElementType.FLOAT);
     assertThat(vector.dimension()).isEqualTo(768);
     assertThat(vector.toString()).isEqualTo("vector(float, 768)");

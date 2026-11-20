@@ -165,7 +165,7 @@ class TypeToSparkType extends TypeUtil.SchemaVisitor<DataType> {
       case UNKNOWN:
         return NullType$.MODULE$;
       case VECTOR:
-        return vectorType(primitive.asVectorType());
+        return vectorType((Types.VectorType) primitive);
       default:
         throw new UnsupportedOperationException(
             "Cannot convert unsupported type to Spark: " + primitive);

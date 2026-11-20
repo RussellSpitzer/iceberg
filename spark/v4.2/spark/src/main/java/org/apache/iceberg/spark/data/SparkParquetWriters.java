@@ -32,7 +32,6 @@ import java.util.stream.Stream;
 import org.apache.iceberg.FieldMetrics;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.ValueSizeFieldMetrics;
-import org.apache.iceberg.parquet.ParquetSchemaUtil;
 import org.apache.iceberg.parquet.ParquetValueReaders.ReusableEntry;
 import org.apache.iceberg.parquet.ParquetValueWriter;
 import org.apache.iceberg.parquet.ParquetValueWriters;
@@ -144,23 +143,24 @@ public class SparkParquetWriters {
 
     @Override
     public ParquetValueWriter<?> vector(ArrayType sArray, GroupType vector) {
-      String[] elementPath = ParquetSchemaUtil.vectorElementPath(currentPath(), vector);
-      String[] repeatedPath = Arrays.copyOf(elementPath, elementPath.length - 1);
+      String[] repeatedPath = currentPath();
 
       int repeatedD = type.getMaxDefinitionLevel(repeatedPath);
       int repeatedR = type.getMaxRepetitionLevel(repeatedPath);
 
-      ColumnDescriptor elementDesc = type.getColumnDescription(elementPath);
+      Type elementType = vector.getType(0).asGroupType().getType(0);
+      ColumnDescriptor elementDesc = type.getColumnDescription(path(elementType.getName()));
       int dimension =
           ((FiniteVectorLogicalTypeAnnotation) vector.getLogicalTypeAnnotation()).getNumElements();
 
-      return new ArrayDataVectorWriter<>(
-          vector.getId().intValue(),
+      return ParquetValueWriters.vectors(
           dimension,
-          repeatedD,
-          repeatedR,
-          ParquetValueWriters.vectorElements(elementDesc),
-          sArray.elementType());
+          ArrayData::numElements,
+          new ArrayDataWriter<>(
+              repeatedD,
+              repeatedR,
+              ParquetValueWriters.vectorElements(elementDesc),
+              sArray.elementType()));
     }
 
     @Override
@@ -547,40 +547,6 @@ public class SparkParquetWriters {
   private static class GeographyWriter extends GeospatialWriter {
     private GeographyWriter(ColumnDescriptor desc) {
       super(desc);
-    }
-  }
-
-  private static class ArrayDataVectorWriter<E> extends ArrayDataWriter<E> {
-    private final int fieldId;
-    private final int dimension;
-    private long valueCount = 0L;
-
-    private ArrayDataVectorWriter(
-        int fieldId,
-        int dimension,
-        int definitionLevel,
-        int repetitionLevel,
-        ParquetValueWriter<E> writer,
-        DataType elementType) {
-      super(definitionLevel, repetitionLevel, writer, elementType);
-      this.fieldId = fieldId;
-      this.dimension = dimension;
-    }
-
-    @Override
-    public void write(int parentRepetition, ArrayData value) {
-      Preconditions.checkArgument(
-          value.numElements() == dimension,
-          "Invalid vector: expected %s elements but got %s",
-          dimension,
-          value.numElements());
-      valueCount += 1;
-      super.write(parentRepetition, value);
-    }
-
-    @Override
-    public Stream<FieldMetrics<?>> metrics() {
-      return Stream.of(new FieldMetrics<>(fieldId, valueCount, 0L));
     }
   }
 

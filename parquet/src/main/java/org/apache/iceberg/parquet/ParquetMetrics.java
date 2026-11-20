@@ -19,6 +19,7 @@
 package org.apache.iceberg.parquet;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
@@ -110,8 +111,7 @@ class ParquetMetrics {
     Map<Integer, Long> columnSizes = Maps.newHashMap();
     for (BlockMetaData block : metadata.getBlocks()) {
       for (ColumnChunkMetaData column : block.getColumns()) {
-        Type.ID id =
-            type.getColumnDescription(column.getPath().toArray()).getPrimitiveType().getId();
+        Type.ID id = columnSizeId(type, column.getPath().toArray());
         if (id != null) {
           int fieldId = id.intValue();
           MetricsModes.MetricsMode mode = MetricsUtil.metricsMode(schema, metricsConfig, fieldId);
@@ -123,6 +123,19 @@ class ParquetMetrics {
     }
 
     return columnSizes;
+  }
+
+  // vector elements carry no ID, so their size is attributed to the enclosing vector
+  private static Type.ID columnSizeId(MessageType type, String[] path) {
+    Type.ID id = type.getColumnDescription(path).getPrimitiveType().getId();
+    if (id == null && path.length >= 3) {
+      Type parent = type.getType(Arrays.copyOf(path, path.length - 2));
+      if (!parent.isPrimitive() && ParquetVectors.isVector(parent.asGroupType())) {
+        return parent.getId();
+      }
+    }
+
+    return id;
   }
 
   static Metrics metrics(
@@ -230,19 +243,33 @@ class ParquetMetrics {
     @Override
     public Iterable<FieldMetrics<?>> vector(Types.VectorType iVector, GroupType vector) {
       Type.ID id = vector.getId();
-      if (null == id) {
+      if (iVector == null || id == null) {
         return ImmutableList.of();
       }
 
       int fieldId = id.intValue();
       MetricsModes.MetricsMode mode = MetricsUtil.metricsMode(schema, metricsConfig, fieldId);
-      FieldMetrics<?> metrics = metricsById.get(fieldId);
-      if (mode == MetricsModes.None.get() || metrics == null) {
+      if (mode == MetricsModes.None.get()) {
         return ImmutableList.of();
       }
 
-      return ImmutableList.of(
-          new FieldMetrics<>(fieldId, metrics.valueCount(), metrics.nullValueCount()));
+      // each non-null vector stores exactly D element values and each null vector stores one null
+      Type element = vector.getType(0).asGroupType().getType(0);
+      ColumnPath path = ColumnPath.get(path(element.getName()));
+      long elementCount = 0;
+      long nullCount = 0;
+      for (ColumnChunkMetaData column : columns.get(path)) {
+        Statistics<?> stats = column.getStatistics();
+        if (stats == null || !stats.isNumNullsSet()) {
+          return ImmutableList.of();
+        }
+
+        nullCount += stats.getNumNulls();
+        elementCount += column.getValueCount();
+      }
+
+      long valueCount = (elementCount - nullCount) / iVector.dimension() + nullCount;
+      return ImmutableList.of(new FieldMetrics<>(fieldId, valueCount, nullCount));
     }
 
     @Override

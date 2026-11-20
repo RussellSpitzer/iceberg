@@ -67,7 +67,12 @@ public class ParquetWithSparkSchemaVisitor<T> {
       if (annotation instanceof FiniteVectorLogicalTypeAnnotation) {
         Preconditions.checkArgument(
             sType instanceof ArrayType, "Invalid vector: %s is not an array", sType);
-        return visitor.vector((ArrayType) sType, group);
+        visitor.fieldNames.push(group.getFieldName(0));
+        try {
+          return visitor.vector((ArrayType) sType, group);
+        } finally {
+          visitor.fieldNames.pop();
+        }
       } else if (LogicalTypeAnnotation.listType().equals(annotation)) {
         Preconditions.checkArgument(
             !group.isRepetition(Repetition.REPEATED),

@@ -99,7 +99,7 @@ class InternalRowWrapper implements StructLike {
           row.getDecimal(pos, decimal.precision(), decimal.scale()).toJavaBigDecimal();
     } else if (type instanceof BinaryType) {
       return (row, pos) -> ByteBuffer.wrap(row.getBinary(pos));
-    } else if (icebergType.isVectorType()) {
+    } else if (icebergType.typeId() == Type.TypeID.VECTOR) {
       DataType elementType = ((ArrayType) type).elementType();
       return (row, pos) -> Arrays.asList(row.getArray(pos).toObjectArray(elementType));
     } else if (type instanceof StructType) {

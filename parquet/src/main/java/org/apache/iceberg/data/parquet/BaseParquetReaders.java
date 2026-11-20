@@ -297,7 +297,21 @@ abstract class BaseParquetReaders<T> {
         return null;
       }
 
-      return ParquetValueReaders.vectors(type, currentPath(), expectedVector);
+      String[] repeatedPath = currentPath();
+
+      int repeatedD = type.getMaxDefinitionLevel(repeatedPath) - 1;
+      int repeatedR = type.getMaxRepetitionLevel(repeatedPath) - 1;
+
+      Type elementType = vector.getType(0).asGroupType().getType(0);
+      ColumnDescriptor elementDesc = type.getColumnDescription(path(elementType.getName()));
+
+      return ParquetValueReaders.vectors(
+          expectedVector.dimension(),
+          List::size,
+          new ParquetValueReaders.ListReader<>(
+              repeatedD,
+              repeatedR,
+              ParquetValueReaders.vectorElements(elementDesc, expectedVector.elementType())));
     }
 
     @Override

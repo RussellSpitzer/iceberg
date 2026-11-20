@@ -75,15 +75,6 @@ final class ParquetVectors {
     return element.asPrimitiveType();
   }
 
-  static String[] elementPath(String[] vectorPath, GroupType vector) {
-    PrimitiveType element = element(vector);
-    String[] path = new String[vectorPath.length + 2];
-    System.arraycopy(vectorPath, 0, path, 0, vectorPath.length);
-    path[vectorPath.length] = vector.getType(0).getName();
-    path[vectorPath.length + 1] = element.getName();
-    return path;
-  }
-
   static GroupType toParquet(VectorType vector, Type.Repetition repetition, int id, String name) {
     return Types.buildGroup(repetition)
         .as(LogicalTypeAnnotation.finiteVectorType(vector.dimension()))

@@ -90,10 +90,6 @@ public interface Type extends Serializable {
     throw new IllegalArgumentException("Not a variant type: " + this);
   }
 
-  default Types.VectorType asVectorType() {
-    throw new IllegalArgumentException("Not a vector type: " + this);
-  }
-
   default boolean isNestedType() {
     return false;
   }
@@ -111,10 +107,6 @@ public interface Type extends Serializable {
   }
 
   default boolean isVariantType() {
-    return false;
-  }
-
-  default boolean isVectorType() {
     return false;
   }
 
